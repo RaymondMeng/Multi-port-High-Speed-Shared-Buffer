@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 //////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
+// Company: 极链缘起 
+// Engineer: mengcheng
 // 
 // Create Date: 2024/03/12 09:55:26
 // Design Name: 
@@ -18,69 +18,71 @@
 // Additional Comments:
 // 
 //////////////////////////////////////////////////////////////////////////////////
+interface port_interface();
+    logic        wr_sop;
+    logic        wr_eop;
+    logic        wr_vld;
+    logic [63:0] wr_data;
+    logic        full;
+    logic        almost_full;
+    logic        write_done;
+endinterface //port_interface
 
+class packet;
+rand logic [63:0] data;
+constraint c {data > 64'd0; data < 64'hFFFFFFFF_FFFFFFFF;}
+endclass
 
 module multiport_sbuffer_top_tb;
 
-localparam IN_FILE_NAME = "../../../../data.txt";
-localparam IN_FILE_NAME1 = "../../../../data1.txt";
-localparam IN_FILE_NAME2 = "../../../../data2.txt";
-localparam IN_FILE_NAME3 = "../../../../data3.txt";
+string IN_FILE_NAME = "../../../../data.txt";
+string IN_FILE_NAME1 = "../../../../data1.txt";
+string IN_FILE_NAME2 = "../../../../data2.txt";
+string IN_FILE_NAME3 = "../../../../data3.txt";
 
-localparam int CLOCK_PERIOD = 10;
 localparam int DATA_SIZE = 100;
+localparam int CLOCK_PERIOD = 10;
 
 logic clk, rst_n;
 
-logic p1_wr_sop, p1_wr_eop, p1_wr_vld,
-      p2_wr_sop, p2_wr_eop, p2_wr_vld, 
-      p3_wr_sop, p3_wr_eop, p3_wr_vld,
-      p4_wr_sop, p4_wr_eop, p4_wr_vld;
-
-logic [63:0] p1_wr_data, p2_wr_data, p3_wr_data, p4_wr_data;
-logic p1_almost_full, p1_full, p2_almost_full, p2_full, 
-      p3_almost_full, p3_full, p4_almost_full, p4_full;
-
-logic write_done = 'd0;
-logic write1_done = 'd0;
-logic write2_done = 'd0;
-logic write3_done = 'd0;
-// integer out_errors = 0;
+port_interface port1();
+port_interface port2();
+port_interface port3();
+port_interface port4();
 
 Multiport_sBuffer_top Multiport_sBuffer_top_inst(
     .clk                  (clk),
     .rst_n                (rst_n),
 
-    .p1_wr_sop            (p1_wr_sop),
-    .p1_wr_eop            (p1_wr_eop),
-    .p1_wr_vld            (p1_wr_vld),
-    .p1_wr_data           (p1_wr_data),
-    .p1_almost_full       (p1_almost_full),
-    .p1_full              (p1_full),
+    .p1_wr_sop            (port1.wr_sop),
+    .p1_wr_eop            (port1.wr_eop),
+    .p1_wr_vld            (port1.wr_vld),
+    .p1_wr_data           (port1.wr_data),
+    .p1_almost_full       (port1.almost_full),
+    .p1_full              (port1.full),
 
-    .p2_wr_sop            (p2_wr_sop),
-    .p2_wr_eop            (p2_wr_eop),
-    .p2_wr_vld            (p2_wr_vld),
-    .p2_wr_data           (p2_wr_data),
-    .p2_almost_full       (p2_almost_full),
-    .p2_full              (p2_full),
+    .p2_wr_sop            (port2.wr_sop),
+    .p2_wr_eop            (port2.wr_eop),
+    .p2_wr_vld            (port2.wr_vld),
+    .p2_wr_data           (port2.wr_data),
+    .p2_almost_full       (port2.almost_full),
+    .p2_full              (port2.full),
 
-    .p3_wr_sop            (p3_wr_sop),
-    .p3_wr_eop            (p3_wr_eop),
-    .p3_wr_vld            (p3_wr_vld),
-    .p3_wr_data           (p3_wr_data),
-    .p3_almost_full       (p3_almost_full),
-    .p3_full              (p3_full),
+    .p3_wr_sop            (port3.wr_sop),
+    .p3_wr_eop            (port3.wr_eop),
+    .p3_wr_vld            (port3.wr_vld),
+    .p3_wr_data           (port3.wr_data),
+    .p3_almost_full       (port3.almost_full),
+    .p3_full              (port3.full),
 
-    .p4_wr_sop            (p4_wr_sop),
-    .p4_wr_eop            (p4_wr_eop),
-    .p4_wr_vld            (p4_wr_vld),
-    .p4_wr_data           (p4_wr_data),
-    .p4_almost_full       (p4_almost_full),
-    .p4_full              (p4_full)
+    .p4_wr_sop            (port4.wr_sop),
+    .p4_wr_eop            (port4.wr_eop),
+    .p4_wr_vld            (port4.wr_vld),
+    .p4_wr_data           (port4.wr_data),
+    .p4_almost_full       (port4.almost_full),
+    .p4_full              (port4.full)
 
     );
-
 
 initial begin
     forever begin
@@ -107,7 +109,7 @@ initial begin: tb_process
     $display("@ %0t: Beginning simulation...", start_time);
     @(posedge clk);
 
-    wait(write_done & write1_done & write2_done & write3_done);
+    wait(port1.write_done & port2.write_done & port3.write_done & port4.write_done);
     #(CLOCK_PERIOD*5) end_time = $time;
 
     // report metrics
@@ -117,157 +119,69 @@ initial begin: tb_process
     $finish;
 end
 
-/*定向测试：四个端口同时工作且转发内容相同*/
-initial begin: p1_read_process
+//用任务来创建重复的内容
+task automatic port_work(    
+    ref  string       IN_FILE_NAME,
+    ref  logic        full,
+    ref  logic        wr_sop,
+    ref  logic        wr_eop,
+    ref  logic        wr_vld,
+    ref  logic [63:0] wr_data,
+    ref  logic        write_done);
+
     int i, in_file, count;
     logic [63:0] din;
+
+    packet p;
+
     @(posedge rst_n);
     $display("@ %0t: Loading file %s...", $time, IN_FILE_NAME);
     in_file = $fopen(IN_FILE_NAME, "r");
-    p1_wr_sop = 0;
-    p1_wr_eop = 0;
-    p1_wr_vld = 0;
-    p1_wr_data = 64'dz;
+    // i = 0;
+    p = new();
+    wr_sop = 0;
+    wr_eop = 0;
+    wr_vld = 0;
+    wr_data = 64'dz;
+    write_done = 0;
 
+    //$display("%d", in_file);
     @(posedge clk);
-    p1_wr_sop = 1'b1;
+    wr_sop = 1'b1;
     /*read data from text file*/
     while ( i < DATA_SIZE ) begin
         @(negedge clk);
-        p1_wr_sop = 1'b0;
-        if (p1_full == 1'b0) begin
+        wr_sop = 1'b0;
+        if (full == 1'b0) begin
             count = $fscanf(in_file,"%016h", din);
-            //$display("%d", din);
-            p1_wr_data = din;
-            p1_wr_vld = 1'b1;
+            $display("%d", din);
+            p.randomize();
+            wr_data = p.data;
+            wr_vld = 1'b1;
         end else begin
-            p1_wr_vld = 1'b0;
+            wr_vld = 1'b0;
         end
         i++;
     end
 
     @(negedge clk);
-    p1_wr_vld = 1'b0;
-    p1_wr_eop = 1'b1;
+    wr_vld = 1'b0;
+    wr_eop = 1'b1;
     @(negedge clk);
-    p1_wr_eop = 1'b0;
+    wr_eop = 1'b0;
     $display("CLOSING IN FILE");
     $fclose(in_file);
     write_done = 1'b1;
-end
+endtask
 
-initial begin: p2_read_process
-    int i, in_file, count;
-    logic [63:0] din;
-    @(posedge rst_n);
-    $display("@ %0t: Loading file %s...", $time, IN_FILE_NAME1);
-    in_file = $fopen(IN_FILE_NAME1, "r");
-    p2_wr_sop = 0;
-    p2_wr_eop = 0;
-    p2_wr_vld = 0;
-    p2_wr_data = 64'dz;
-
-    @(posedge clk);
-    p2_wr_sop = 1'b1;
-    /*read data from text file*/
-    while ( i < DATA_SIZE ) begin
-        @(negedge clk);
-        p2_wr_sop = 1'b0;
-        if (p2_full == 1'b0) begin
-            count = $fscanf(in_file,"%016h", din);
-            //$display("%d", din);
-            p2_wr_data = din;
-            p2_wr_vld = 1'b1;
-        end else begin
-            p2_wr_vld = 1'b0;
-        end
-        i++;
-    end
-
-    @(negedge clk);
-    p2_wr_vld = 1'b0;
-    p2_wr_eop = 1'b1;
-    @(negedge clk);
-    p2_wr_eop = 1'b0;
-    $display("CLOSING IN FILE1");
-    $fclose(in_file);
-    write1_done = 1'b1;
-end
-
-initial begin: p3_read_process
-    int i, in_file, count;
-    logic [63:0] din;
-    @(posedge rst_n);
-    $display("@ %0t: Loading file %s...", $time, IN_FILE_NAME2);
-    in_file = $fopen(IN_FILE_NAME2, "r");
-    p3_wr_sop = 0;
-    p3_wr_eop = 0;
-    p3_wr_vld = 0;
-    p3_wr_data = 64'dz;
-
-    @(posedge clk);
-    p3_wr_sop = 1'b1;
-    /*read data from text file*/
-    while ( i < DATA_SIZE ) begin
-        @(negedge clk);
-        p3_wr_sop = 1'b0;
-        if (p3_full == 1'b0) begin
-            count = $fscanf(in_file,"%016h", din);
-            //$display("%d", din);
-            p3_wr_data = din;
-            p3_wr_vld = 1'b1;
-        end else begin
-            p3_wr_vld = 1'b0;
-        end
-        i++;
-    end
-
-    @(negedge clk);
-    p3_wr_vld = 1'b0;
-    p3_wr_eop = 1'b1;
-    @(negedge clk);
-    p3_wr_eop = 1'b0;
-    $display("CLOSING IN FILE2");
-    $fclose(in_file);
-    write2_done = 1'b1;
-end
-
-initial begin: p4_read_process
-    int i, in_file, count;
-    logic [63:0] din;
-    @(posedge rst_n);
-    $display("@ %0t: Loading file %s...", $time, IN_FILE_NAME3);
-    in_file = $fopen(IN_FILE_NAME3, "r");
-    p4_wr_sop = 0;
-    p4_wr_eop = 0;
-    p4_wr_vld = 0;
-    p4_wr_data = 64'dz;
-
-    @(posedge clk);
-    p4_wr_sop = 1'b1;
-    /*read data from text file*/
-    while ( i < DATA_SIZE ) begin
-        @(negedge clk);
-        p4_wr_sop = 1'b0;
-        if (p4_full == 1'b0) begin
-            count = $fscanf(in_file,"%016h", din);
-            //$display("%d", din);
-            p4_wr_data = din;
-            p4_wr_vld = 1'b1;
-        end else begin
-            p4_wr_vld = 1'b0;
-        end
-        i++;
-    end
-
-    @(negedge clk);
-    p4_wr_vld = 1'b0;
-    p4_wr_eop = 1'b1;
-    @(negedge clk);
-    p4_wr_eop = 1'b0;
-    $display("CLOSING IN FILE3");
-    $fclose(in_file);
-    write3_done = 1'b1;
+/* 多线程执行多端口任务 */
+initial begin
+    fork
+        port_work(IN_FILE_NAME,  port1.full, port1.wr_sop, port1.wr_eop, port1.wr_vld, port1.wr_data, port1.write_done);
+        port_work(IN_FILE_NAME1, port2.full, port2.wr_sop, port2.wr_eop, port2.wr_vld, port2.wr_data, port2.write_done);
+        port_work(IN_FILE_NAME2, port3.full, port3.wr_sop, port3.wr_eop, port3.wr_vld, port3.wr_data, port3.write_done);
+        port_work(IN_FILE_NAME3, port4.full, port4.wr_sop, port4.wr_eop, port4.wr_vld, port4.wr_data, port4.write_done);
+    join
 end
 
 endmodule
