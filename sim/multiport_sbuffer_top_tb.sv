@@ -28,9 +28,59 @@ interface port_interface();
     logic        write_done;
 endinterface //port_interface
 
-class packet;
-rand logic [63:0] data;
-constraint c {data > 64'd0; data < 64'hFFFFFFFF_FFFFFFFF;}
+//用来生成长度与内容随机，数据包头符合要求的随机测试数据
+class testdata;
+    rand logic [63:0] data[];
+    rand logic [10:0] length;
+
+    constraint c {
+        length >= 64;
+        length <= 1024;
+        if (length % 64 == 0)
+            data.size() == ((length / 64));
+        else data.size() == ((length / 64) + 1);
+    }
+
+    task display();
+        $display("length_data: %0d, dest_port_data: %h, prior_data: %h", length, data[0][3:0], data[0][6:4]);
+    endtask
+
+    task match_length();
+        foreach(data[i]) begin
+            foreach (data[i][j]) begin 
+                if((i*64 + j) > (length - 1)) begin 
+                    data[i][j] = 0;
+                end
+            end
+        end
+    endtask
+
+    task data_control(input logic [17:0] sod);
+        for(int i = 0; i<=17; i++) begin
+            data[0][i] = sod[i];
+        end
+    endtask
+
+endclass
+
+//用来设置数据包头
+class testdata_start;
+    rand logic [3:0]  dest_port;
+    rand logic [2:0]  prior;
+    rand logic [17:0] sod;
+
+    constraint c {
+        dest_port <= 15;
+        prior <= 7;
+    }
+
+    task set_sod(input logic [10:0] len);
+        sod = {len, prior, dest_port};
+    endtask
+
+    task display();
+        $display("length: %0d, dest_port: %h, prior: %h, sod:%h",sod[17:7], dest_port, prior, sod);
+    endtask
 endclass
 
 module multiport_sbuffer_top_tb;
@@ -121,7 +171,7 @@ end
 
 //用任务来创建重复的内容
 task automatic port_work(    
-    ref  string       IN_FILE_NAME,
+    // ref  string       IN_FILE_NAME,
     ref  logic        full,
     ref  logic        wr_sop,
     ref  logic        wr_eop,
@@ -132,56 +182,98 @@ task automatic port_work(
     int i, in_file, count;
     logic [63:0] din;
 
-    packet p;
+    testdata td;
+    testdata_start td_s;
 
-    @(posedge rst_n);
-    $display("@ %0t: Loading file %s...", $time, IN_FILE_NAME);
-    in_file = $fopen(IN_FILE_NAME, "r");
-    // i = 0;
-    p = new();
+    // @(posedge rst_n) begin
+    // $display("@ %0t: Loading file %s...", $time, IN_FILE_NAME);
+    // in_file = $fopen(IN_FILE_NAME, "r");
+    @(posedge clk) begin
+    i = 0;
+    td = new();
+    td_s = new();
+    td.randomize();
+    td_s.randomize();
+    td.match_length();
+    td_s.set_sod(td.length);
+    td.data_control(td_s.sod);
+    td_s.display();
+    td.display();
     wr_sop = 0;
     wr_eop = 0;
     wr_vld = 0;
     wr_data = 64'dz;
     write_done = 0;
+    end
 
     //$display("%d", in_file);
-    @(posedge clk);
-    wr_sop = 1'b1;
     /*read data from text file*/
-    while ( i < DATA_SIZE ) begin
-        @(negedge clk);
-        wr_sop = 1'b0;
+    @(posedge clk) begin
+    wr_sop = 1'b1;
+    end
+
+    @(posedge clk) begin
+    wr_sop = 1'b0;
+    while ( i <= td.length / 64 ) begin
         if (full == 1'b0) begin
-            count = $fscanf(in_file,"%016h", din);
-            $display("%d", din);
-            p.randomize();
-            wr_data = p.data;
+            // count = $fscanf(in_file,"%016h", din);
+            // $display("%d", din);
             wr_vld = 1'b1;
-        end else begin
+            wr_data = td.data[i];
+            end
+        else begin
             wr_vld = 1'b0;
         end
         i++;
+        @(posedge clk);
+    end
     end
 
-    @(negedge clk);
+    @(posedge clk) begin
     wr_vld = 1'b0;
     wr_eop = 1'b1;
-    @(negedge clk);
+    end
+    @(posedge clk) begin
     wr_eop = 1'b0;
-    $display("CLOSING IN FILE");
-    $fclose(in_file);
+    // @(negedge clk);
+    // wr_vld = 1'b0;
+    // wr_eop = 1'b1;
+    // @(negedge clk);
+    // wr_eop = 1'b0;
+    // $display("CLOSING IN FILE");
+    // $fclose(in_file);
     write_done = 1'b1;
+    end
 endtask
 
 /* 多线程执行多端口任务 */
 initial begin
-    fork
-        port_work(IN_FILE_NAME,  port1.full, port1.wr_sop, port1.wr_eop, port1.wr_vld, port1.wr_data, port1.write_done);
-        port_work(IN_FILE_NAME1, port2.full, port2.wr_sop, port2.wr_eop, port2.wr_vld, port2.wr_data, port2.write_done);
-        port_work(IN_FILE_NAME2, port3.full, port3.wr_sop, port3.wr_eop, port3.wr_vld, port3.wr_data, port3.write_done);
-        port_work(IN_FILE_NAME3, port4.full, port4.wr_sop, port4.wr_eop, port4.wr_vld, port4.wr_data, port4.write_done);
-    join
+    @(posedge rst_n) begin
+        fork
+            for(int i = 0; i < 10; i++) begin
+                port_work(port1.full, port1.wr_sop, port1.wr_eop, port1.wr_vld, port1.wr_data, port1.write_done);
+            end
+            for(int i = 0; i < 10; i++) begin
+                port_work(port2.full, port2.wr_sop, port2.wr_eop, port2.wr_vld, port2.wr_data, port2.write_done);
+            end
+            for(int i = 0; i < 10; i++) begin
+                port_work(port3.full, port3.wr_sop, port3.wr_eop, port3.wr_vld, port3.wr_data, port3.write_done);
+            end
+            for(int i = 0; i < 10; i++) begin
+                port_work(port4.full, port4.wr_sop, port4.wr_eop, port4.wr_vld, port4.wr_data, port4.write_done);
+            end
+        join
+    end
 end
+
+// initial begin
+//     int i = 0;
+//     @(posedge rst_n) begin
+//     while(i < 10) begin
+//        port_work(port1.full, port1.wr_sop, port1.wr_eop, port1.wr_vld, port1.wr_data, port1.write_done); 
+//        i++;
+//     end
+//     end
+// end
 
 endmodule
