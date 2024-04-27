@@ -372,8 +372,6 @@ port_input_fifo port16_input_inst (
   .empty(p16_empty)              // output wire empty
 );
 
-
-
 // enter_arbitr enter_arbitr_inst(
 //     .clk                      (clk),      
 //     .rst_n                    (rst_n), 
@@ -397,6 +395,15 @@ port_input_fifo port16_input_inst (
 //     // .o_data_valid             (sdat_valid)
 //     );
 
+Port1_SGDMA Port1_SGDMA_inst(
+    i_clk(clk),
+    i_rst_n(rst_n),
+    o_rd_en(p1_rd_en),
+    i_dat(p1_dout),
+    i_empty(p1_empty),
+    i_sop(p1_wr_sop), //TODO:sop和eop需要和fifo读出同步,和rd_en&
+    i_eop(p1_wr_eop)
+);
 
 
 endmodule

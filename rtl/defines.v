@@ -21,5 +21,6 @@
 
 `define DATA_WIDTH 64
 `define PORT_NUM 4
+`define ADDR_WIDTH 17
 
 `define PACKET_SWITCH
