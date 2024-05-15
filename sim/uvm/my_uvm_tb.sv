@@ -29,7 +29,12 @@ interface port_interface(input clk, input rst_n);
     logic        full;
     logic        almost_full;
     logic        write_done;
-endinterface //port_interface
+    logic        rdy;
+    logic [63:0] rd_data;
+    logic        rd_sop;
+    logic        rd_eop;
+    logic        rd_vld;    
+endinterface
 
 module multiport_sbuffer_top_tb;
 
@@ -53,6 +58,11 @@ Multiport_sBuffer_top Multiport_sBuffer_top_inst(
     .p1_wr_data           (port1.wr_data),
     .p1_almost_full       (port1.almost_full),
     .p1_full              (port1.full),
+    .p1_ready             (port1.rdy),
+    .p1_rd_data           (port1.rd_data),
+    .p1_rd_sop            (port1.rd_sop),
+    .p1_rd_eop            (port1.rd_eop),
+    .p1_rd_vld            (port1.rd_vld),
 
     .p2_wr_sop            (port2.wr_sop),
     .p2_wr_eop            (port2.wr_eop),
@@ -60,6 +70,11 @@ Multiport_sBuffer_top Multiport_sBuffer_top_inst(
     .p2_wr_data           (port2.wr_data),
     .p2_almost_full       (port2.almost_full),
     .p2_full              (port2.full),
+    .p2_ready             (port2.rdy),
+    .p2_rd_data           (port2.rd_data),
+    .p2_rd_sop            (port2.rd_sop),
+    .p2_rd_eop            (port2.rd_eop),
+    .p2_rd_vld            (port2.rd_vld),
 
     .p3_wr_sop            (port3.wr_sop),
     .p3_wr_eop            (port3.wr_eop),
@@ -67,13 +82,23 @@ Multiport_sBuffer_top Multiport_sBuffer_top_inst(
     .p3_wr_data           (port3.wr_data),
     .p3_almost_full       (port3.almost_full),
     .p3_full              (port3.full),
+    .p3_ready             (port3.rdy),
+    .p3_rd_data           (port3.rd_data),
+    .p3_rd_sop            (port3.rd_sop),
+    .p3_rd_eop            (port3.rd_eop),
+    .p3_rd_vld            (port3.rd_vld),
 
     .p4_wr_sop            (port4.wr_sop),
     .p4_wr_eop            (port4.wr_eop),
     .p4_wr_vld            (port4.wr_vld),
     .p4_wr_data           (port4.wr_data),
     .p4_almost_full       (port4.almost_full),
-    .p4_full              (port4.full)
+    .p4_full              (port4.full),
+    .p4_ready             (port4.rdy),
+    .p4_rd_data           (port4.rd_data),
+    .p4_rd_sop            (port4.rd_sop),
+    .p4_rd_eop            (port4.rd_eop),
+    .p4_rd_vld            (port4.rd_vld)
 
     );
 
@@ -93,7 +118,13 @@ initial begin
 end
 
 initial begin
-   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt.drv", "port", port1);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt1.drv", "port", port1);
+//    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt2.drv", "port", port2);
+//    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt3.drv", "port", port3);
+//    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt4.drv", "port", port4);
+
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt1.mon_out", "port", port1);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt1.mon_in", "port", port1);
 
 	run_test("base_test");
 end

@@ -15,10 +15,9 @@ class randdata extends uvm_sequence_item;
         `uvm_field_int(sod, UVM_ALL_ON)
     `uvm_object_utils_end
     
-    function new(string name ="randdata");
+    function new(string name = "");
         super.new(name);
-        // $display($sformatf("%s is created", name));
-    endfunction: new        
+    endfunction       
 
     constraint data_c {
         length >= 64;
@@ -45,7 +44,7 @@ class randdata extends uvm_sequence_item;
             data[0][i] = sod[i];
         end
     endfunction
-endclass: randdata
+endclass
 
 class case0_sequence extends uvm_sequence #(randdata);
    `uvm_object_utils(case0_sequence)
@@ -57,7 +56,7 @@ class case0_sequence extends uvm_sequence #(randdata);
    virtual task body();
         randdata rd;
         int i;
-        for(i=0;i<=10;i++) begin
+        repeat(50) begin
             rd = randdata::type_id::create("rd");
             start_item(rd);            
             if (!rd.randomize()) begin

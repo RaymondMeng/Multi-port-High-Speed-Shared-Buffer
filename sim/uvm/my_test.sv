@@ -1,13 +1,13 @@
-
 import uvm_pkg::*;
 
 class base_test extends uvm_test;
-   my_env     env;
 
    `uvm_component_utils(base_test)
+
+   my_env     env;
    
-   function new(string name = "base_test", uvm_component parent = null);
-      super.new(name,parent);
+   function new(string name, uvm_component parent);
+      super.new(name, parent);
    endfunction
 
     virtual function void build_phase(uvm_phase phase);
@@ -16,16 +16,33 @@ class base_test extends uvm_test;
     endfunction
 
     virtual task run_phase(uvm_phase phase);
-        case0_sequence seq;
+        case0_sequence seq1;
+        // case0_sequence seq2;
+        // case0_sequence seq3;
+        // case0_sequence seq4;
 
-        // notify that run_phase has started
-        // NOTE: simulation terminates once all objections are dropped
+
         phase.raise_objection(.obj(this));
-
-        seq = case0_sequence::type_id::create("seq");
-        seq.start(env.agt.sqr);
+        fork
+            begin
+            seq1 = case0_sequence::type_id::create("seq1");
+            seq1.start(env.agt1.sqr);
+            end
+            // begin
+            // seq2 = case0_sequence::type_id::create("seq2");
+            // seq2.start(env.agt2.sqr);
+            // end
+            // begin
+            // seq3 = case0_sequence::type_id::create("seq3");
+            // seq3.start(env.agt3.sqr);
+            // end
+            // begin
+            // seq4 = case0_sequence::type_id::create("seq4");
+            // seq4.start(env.agt4.sqr);
+            // end
+        join
 
         // notify that run_phase has completed
         phase.drop_objection(.obj(this));
-    endtask: run_phase     
+    endtask    
 endclass
