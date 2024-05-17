@@ -119,12 +119,18 @@ end
 
 initial begin
    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt1.drv", "port", port1);
-//    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt2.drv", "port", port2);
-//    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt3.drv", "port", port3);
-//    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt4.drv", "port", port4);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt2.drv", "port", port2);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt3.drv", "port", port3);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt4.drv", "port", port4);
 
    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt1.mon_out", "port", port1);
    uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt1.mon_in", "port", port1);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt2.mon_out", "port", port2);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt2.mon_in", "port", port2);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt3.mon_out", "port", port3);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt3.mon_in", "port", port3);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt4.mon_out", "port", port4);
+   uvm_config_db#(virtual port_interface)::set(null, "uvm_test_top.env.agt4.mon_in", "port", port4);
 
 	run_test("base_test");
 end

@@ -17,9 +17,9 @@ class base_test extends uvm_test;
 
     virtual task run_phase(uvm_phase phase);
         case0_sequence seq1;
-        // case0_sequence seq2;
-        // case0_sequence seq3;
-        // case0_sequence seq4;
+        case0_sequence seq2;
+        case0_sequence seq3;
+        case0_sequence seq4;
 
 
         phase.raise_objection(.obj(this));
@@ -28,18 +28,18 @@ class base_test extends uvm_test;
             seq1 = case0_sequence::type_id::create("seq1");
             seq1.start(env.agt1.sqr);
             end
-            // begin
-            // seq2 = case0_sequence::type_id::create("seq2");
-            // seq2.start(env.agt2.sqr);
-            // end
-            // begin
-            // seq3 = case0_sequence::type_id::create("seq3");
-            // seq3.start(env.agt3.sqr);
-            // end
-            // begin
-            // seq4 = case0_sequence::type_id::create("seq4");
-            // seq4.start(env.agt4.sqr);
-            // end
+            begin
+            seq2 = case0_sequence::type_id::create("seq2");
+            seq2.start(env.agt2.sqr);
+            end
+            begin
+            seq3 = case0_sequence::type_id::create("seq3");
+            seq3.start(env.agt3.sqr);
+            end
+            begin
+            seq4 = case0_sequence::type_id::create("seq4");
+            seq4.start(env.agt4.sqr);
+            end
         join
 
         // notify that run_phase has completed
