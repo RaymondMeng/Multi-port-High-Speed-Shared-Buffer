@@ -28,19 +28,19 @@ void data_init(){
 
 void port_data_generate(FILE *fp){
     data_init();
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 50; i++)
     {
         printf("length: %d priority: %d dest_port: %d\r\n", length[i], priority[i], dest_port[i]);
         ctrl_data = (length[i] << 7) | (priority[i] << 4) | dest_port[i];
-        printf("%016x\n", ctrl_data);
-        fprintf(fp, "%016x\n", ctrl_data);
+        printf("%032x\n", ctrl_data);
+        fprintf(fp, "%032x\n", ctrl_data);
 
         for (int j = 0; j < length[i]; j++)
         {
             package_data = rand() % 256;
             printf("%02x", package_data);
             fprintf(fp, "%02x", package_data);
-            if ((j+1)%8 == 0)
+            if ((j+1)%16 == 0)
             {
                 printf("\n"); 
                 fprintf(fp, "\n");
