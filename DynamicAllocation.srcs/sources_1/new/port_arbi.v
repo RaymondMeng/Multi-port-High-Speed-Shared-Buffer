@@ -19,86 +19,91 @@
 // Additional Comments:
 // 
 //////////////////////////////////////////////////////////////////////////////////
-
-
 `include "defines.v"
 
+/*
+`define PRAM_NUM 32                              // PRAM数量
+`define PORT_NUM 16                              // 端口数量
+`define PRAM_NUM_WIDTH 5                         // 表示端口号的位数
+`define MEM_ADDR_WIDTH 11                        // 物理地址位宽
+`define DATA_FRAME_NUM_WIDTH 7                   // 单个数据包帧数量位宽
+`define DATA_FRAME_NUM 128                       // 信源位宽
+*/
 
-module port_arbi (
+module port_arbi #(
+    PRIORITY_PRAM_NUM = 0,
+    PORT_NUM = 0
+)(
     input          i_clk,
     input          i_rst_n,
 
     // pram交互信号
     input  [`PRAM_NUM - 1:0]                          i_pram_state,               // pram工作状态
-    input                                             i_pram_apply_mem_ack,       // pram握手信号
+    input                                             i_pram_apply_mem_done,      // pram分配结束标志位
     input                                             i_pram_apply_mem_refuse,    // 在mem_apply状态拒绝提供空闲地址
     input  [`PRAM_NUM * `DATA_FRAME_NUM_WIDTH - 1:0]  i_pram_free_space,          // pram剩余空间（低于128的部分）
-    input  [`PORT_NUM - 1:0]                          i_bigger_than_128,          // 32片pram剩余空间大于128的标志位
+    input  [`PORT_NUM - 1:0]                          i_bigger_than_64,           // 32片pram剩余空间大于128的标志位
+
+    input                                             i_data_vld,                 // 输出数据有效位（作为FIFO的使能信号）
+    input [`PRAM_NUM_WIDTH + `MEM_ADDR_WIDTH - 1:0]   i_mem_vt_addr,              // 分配内存的虚拟地址
 
     output reg [`PRAM_NUM_WIDTH - 1:0]                o_pram_mem_apply_port_num,  // 目标pram号，输出至接口模块进行分配
     output reg                                        o_pram_mem_apply_req,       // 数据请求信号
+    output reg [`DATA_FRAME_NUM_WIDTH - 1:0]          o_pram_mem_apply_num,       // 缓存申请数量
 
     input                                             i_pram_chip_apply_success,  // pram片申请成功信号
     input                                             i_pram_chip_apply_fail,     // pram片申请失败信号
 
     output reg                                        o_pram_chip_apply_req,      // pram片申请信号
-    output     [`PRAM_NUM_WIDTH - 1:0]                o_pram_chip_port_num,       // 申请的pram号
+    output reg [`PRAM_NUM_WIDTH - 1:0]                o_pram_chip_port_num,       // 申请的pram号   
 
-    input  [`PRAM_NUM_WIDTH + `MEM_ADDR_WIDTH - 1:0]  i_pram_addr,                // pram分配的空间地址  (pram中进存储物理地址，在输出时打一拍，同时变成虚拟地址)      
+    input  i_mem_malloc_clk,
+    output o_mem_malloc_clk,   
 
     // free list交互信号
     input                                             i_mem_req,                  // 端口发起内存申请
-    input                                             i_mem_apply_num,            // 申请内存数量
+    input  [`DATA_FRAME_NUM_WIDTH - 1:0]              i_mem_apply_num,            // 申请内存数量
 
     output                                            o_data_vld,                 // 输出数据有效位（作为FIFO的使能信号）
-    output [`PRAM_NUM_WIDTH + `MEM_ADDR_WIDTH - 1:0]  o_mem_vt_addr,              // 分配内存的虚拟地址
-    output                                            o_mem_apply_failed          // 内存分配失败
+    output [`PRAM_NUM_WIDTH + `MEM_ADDR_WIDTH - 1:0]  o_mem_vt_addr               // 分配内存的虚拟地址
 );
 
 // 状态信息标志位
-// reg arbi_done;                                // 仲裁结束标志位
 reg inner_mem_enough;                         // 端口域内存充足
 reg outer_mem_enough;                         // 其他端口域内存充足
 reg exist_idle_chip;                          // 存在空闲芯片
-// reg apply_chip_done;                          // 芯片申请完成标志位
-reg all_done;                                 // 状态恢复标志位
-reg apply_mem_done;                           // 内存分配完成标志位
 reg scheme_done;                              // 调度结束标志位
 
 // 计算完成标志位，用于控制调度方式同时载入
-reg compute_inner_done;                       // 内部计数计算完成
+reg compute_inner_done;                       // 内部空间比较完成
 reg scan_chip_done;                           // 芯片状态计算完成
-reg compute_outer_done;                       // 外部计数计算完成
+reg compute_outer_done;                       // 外部空间比较完成
 
-reg [11:0] compute_inner_res;                 // 内部剩余空间计算结果
-reg [11:0] compute_outer_res;                 // 外部剩余空间计算结果
+reg [`PRAM_NUM_WIDTH - 1:0] inner_arbi_res;   // 内部仲裁结果寄存器（申请目标pram号）
+reg [`PRAM_NUM_WIDTH - 1:0] outer_arbi_res;   // 外部仲裁结果寄存器
+reg [`PRAM_NUM_WIDTH - 1:0] pram_chip_port_num;    // 申请pram所使用的端口号
 
 reg inner_mem_enough_reg;                     // 标志位寄存器     
 reg outer_mem_enough_reg;                         
 reg exist_idle_chip_reg;                          
 
-// 输入寄存器
-// reg apply_chip_success;                       // 申请成功信号寄存器
-// reg apply_chip_fail;                          // 申请失败信号寄存器
-
-reg [`PRAM_NUM / 2 - 1:0]                      pram_state_reg;                        // pram状态寄存器
+reg [`PRAM_NUM - 1:0]                          pram_state_reg;                        // pram状态寄存器
 reg [`DATA_FRAME_NUM_WIDTH - 1:0]              mem_apply_num_reg;                     // 内存申请数量寄存器
 reg [`PRAM_NUM * `DATA_FRAME_NUM_WIDTH - 1:0]  pram_free_space_reg;                   // pram剩余空间寄存器
-reg [`PORT_NUM - 1:0]                          bigger_than_128_reg;                   // pram剩余空间大于128标志位
+reg [`PRAM_NUM - 1:0]                          bigger_than_64_reg;                   // pram剩余空间大于128标志位
 
-wire [`PORT_NUM - 1:0]                          inner_bigger_than_128_reg;             // 端口域内pram剩余空间大于128标志位
-wire [`PORT_NUM - 1:0]                          outer_bigger_than_128_reg;             // 端口域外pram剩余空间大于128标志位
-
-// 存储策略标志位
-// reg str_self;                                 // 在自己端口域下存储标志位
-// reg str_cross_chip_self;                      // 端口域内跨片传输
-// reg str_share;                                // 跨端口域传输标志位
+wire [`PRAM_NUM - 1:0]                          inner_bigger_than_64_reg;             // 端口域内pram剩余空间大于128标志位
+wire [`PRAM_NUM - 1:0]                          outer_bigger_than_64_reg;             // 端口域外pram剩余空间大于128标志位
 
 // 模块内寄存器
-reg [(`PRAM_NUM_WIDTH + `DATA_FRAME_NUM_WIDTH) * 5 - 1:0] arbi_res;              // 仲裁结果寄存器，pram号加申请数量的组合（暂定最多能同时申请5片sram空间）
-reg [4:0]                                                 arbi_pram_num;         // 仲裁所使用pram的数量
+reg [(`PRAM_NUM_WIDTH + `DATA_FRAME_NUM_WIDTH) - 1:0]     arbi_res;              // 仲裁结果寄存器，pram号加申请数量的组合
+// reg [4:0]                                                 arbi_pram_num;         // 仲裁所使用pram的数量
 reg [`PRAM_NUM - 1:0]                                     port_belong_pram;      // 端口所属pram寄存器，置1为该端口所属，0为非所属
-reg [`PRAM_NUM_WIDTH - 1:0]                               pram_chip_port_num;    // 申请pram所使用的端口号
+
+reg       error_flag;                         // 错误标志位
+
+// 调度器
+wire [3:0] priority_set;                       // 0~15 -> 16~31
 
 // 计数器
 reg [7:0] timeout_cnt;                        //超时计数器（暂定）
@@ -128,64 +133,66 @@ always @(*) begin
     case(state)
         S_RST:
             if (i_mem_req)
-                next_state <= S_LOAD;
+                next_state = S_LOAD;
             else
-                next_state <= S_RST;
+                next_state = S_RST;
         S_IDLE:
             if (i_mem_req)
-                next_state <= S_LOAD;
+                next_state = S_LOAD;
             else
-                next_state <= S_IDLE;
+                next_state = S_IDLE;
         S_LOAD:
-            next_state <= S_COMPUTE;
+            next_state = S_COMPUTE;
         S_COMPUTE:
-            if ({inner_mem_enough, exist_idle_chip, outer_mem_enough} == 3'b1xx)
-                next_state <= S_ABRI_ALONE;                                               // 之后通过时序控制，控制三个标志位同时写入，三个计算过程，在计算完成后，将标志位置高
-            else if ({inner_mem_enough, exist_idle_chip, outer_mem_enough} == 3'b01x)
-                next_state <= S_APPLY_CHIP;
-            else if ({inner_mem_enough, exist_idle_chip, outer_mem_enough} == 3'b001)
-                next_state <= S_ARBI_SHARE;
+            if (inner_mem_enough == 1'b1)
+                next_state = S_ABRI_ALONE;                                               // 之后通过时序控制，控制三个标志位同时写入，三个计算过程，在计算完成后，将标志位置高
+            else if (exist_idle_chip == 1'b1)
+                next_state = S_APPLY_CHIP;
+            else if (outer_mem_enough == 1'b1)
+                next_state = S_ARBI_SHARE;
             else
-                next_state <= S_COMPUTE;
+                next_state = S_COMPUTE;
         S_ABRI_ALONE:
             if (scheme_done)
-                next_state <= S_APPLY_MEM;
+                next_state<= S_APPLY_MEM;
             else
-                next_state <= S_ABRI_ALONE;
+                next_state = S_ABRI_ALONE;
         S_APPLY_CHIP:
-            if (scheme_done)
-                next_state <= S_APPLY_MEM;
-            else if (timeout_cnt > 8'hff)
-                next_state <= S_LOAD;
+            if (scheme_done && i_pram_chip_apply_success && ~error_flag)
+                next_state = S_APPLY_MEM;
+            else if ((scheme_done && i_pram_chip_apply_fail) || error_flag)
+                next_state = S_LOAD;
             else
-                next_state <= S_APPLY_CHIP;
+                next_state = S_APPLY_CHIP;
         S_ARBI_SHARE:
             if (scheme_done)
-                next_state <= S_APPLY_MEM;
+                next_state = S_APPLY_MEM;
             else
-                next_state <= S_ARBI_SHARE;
+                next_state = S_ARBI_SHARE;
         S_APPLY_MEM:
-            if (apply_mem_done)
-                next_state <= S_DONE;
+            if (i_pram_apply_mem_done)
+                next_state = S_DONE;
+            else if (i_pram_apply_mem_refuse)
+                next_state = S_LOAD; 
             else
-                next_state <= S_APPLY_MEM;
+                next_state = S_APPLY_MEM;
         S_DONE:
-            if (all_done)
-                next_state <= S_IDLE;
-            else
-                next_state <= S_DONE;
+            next_state = S_IDLE;
         default:
-            next_state <= S_IDLE;
+            next_state = S_IDLE;
     endcase
 end
+
+assign o_mem_malloc_clk = i_mem_malloc_clk;
+assign priority_set = PRIORITY_PRAM_NUM;
 
 // port_belong_pram 端口号对应的pram一定所属该端口下
 always @(posedge i_clk or negedge i_rst_n) begin 
     if (~i_rst_n)
         port_belong_pram <= 32'b0;
-    else if (state == S_LOAD)
-        port_belong_pram[`PORT_NUM] <= 1'b1;                                    // 保证域端口号相对应的pram始终存在于该端口域下
-    else if (state == S_APPLY_CHIP && i_pram_chip_apply_success)
+    else if (next_state == S_LOAD)
+        port_belong_pram[PORT_NUM] <= 1'b1;                                    // 保证域端口号相对应的pram始终存在于该端口域下
+    else if (state == S_APPLY_CHIP && i_pram_chip_apply_success && ~i_pram_chip_apply_fail)
         port_belong_pram[pram_chip_port_num] <= 1'b1;
     else
         port_belong_pram <= port_belong_pram;
@@ -194,93 +201,1836 @@ end
 // pram_state_reg、mem_apply_num_reg、pram_free_space_reg、bigger_than_128_reg四个寄存器在LOAD状态载入pram状态信息
 always @(posedge i_clk or negedge i_rst_n) begin 
     if (~i_rst_n) begin
-        pram_state_reg <= 16'd0;
-        mem_apply_num_reg <= 8'd0;
-        pram_free_space_reg <= 256'd0;
-        bigger_than_128_reg <= 32'd0;
+        pram_state_reg <= 32'd0;
+        mem_apply_num_reg <= 7'd0;
+        pram_free_space_reg <= 224'd0;
+        bigger_than_64_reg <= 32'd0;
     end
-    else if (state == S_LOAD) begin 
+    else if (next_state == S_LOAD) begin 
         pram_state_reg <= i_pram_state;
         mem_apply_num_reg <= i_mem_apply_num;
         pram_free_space_reg <= i_pram_free_space;
-        bigger_than_128_reg <= i_bigger_than_128;
+        bigger_than_64_reg <= i_bigger_than_64; 
     end
     else begin
         pram_state_reg <= pram_state_reg;
         mem_apply_num_reg <= mem_apply_num_reg;
         pram_free_space_reg <= pram_free_space_reg;
-        bigger_than_128_reg <= bigger_than_128_reg;
+        bigger_than_64_reg <= bigger_than_64_reg;
     end
 end
 
 /* 申请域仲裁：端口域内申请、空闲pram申请、端口域外申请 */
-assign inner_bigger_than_128_reg = port_belong_pram & bigger_than_128_reg;
-assign outer_bigger_than_128_reg = (~port_belong_pram) & bigger_than_128_reg;
+assign inner_bigger_than_64_reg = port_belong_pram & bigger_than_64_reg;
+assign outer_bigger_than_64_reg = (~port_belong_pram) & bigger_than_64_reg;
 
 // 内部空间计算，以及计算完成标志位寄存器置位
 always @(i_clk or i_rst_n) begin 
     if (~i_rst_n) begin 
         inner_mem_enough_reg = 1'd0;
-        compute_inner_res = 12'd0;
+        inner_arbi_res = 5'd0;
         compute_inner_done = 1'd0;
     end
-    else if (state == S_COMPUTE && compute_inner_done == 1'b0) begin
-        if (|inner_bigger_than_128_reg) begin 
+    else if (next_state == S_COMPUTE && compute_inner_done == 1'b0) begin
+        if (|inner_bigger_than_64_reg) begin 
+            case(priority_set) 
+                4'd0: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[16] ? 5'd16 :
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 5'd0;
+                end
+                4'd1: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 5'd0;
+                end
+                4'd2: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 : 5'd0;
+                end
+                4'd3: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 : 5'd0;
+                end
+                4'd4: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 : 5'd0;
+                end
+                4'd5: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 : 5'd0;
+                end
+                4'd6: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 : 5'd0;
+                end
+                4'd7: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 : 5'd0;
+                end
+                4'd8: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 : 5'd0;
+                end
+                4'd9: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 : 5'd0;
+                end
+                4'd10: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 : 5'd0;
+                end
+                4'd11: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 : 5'd0;
+                end
+                4'd12: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 : 5'd0;
+                end
+                4'd13: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 : 5'd0;
+                end
+                4'd14: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 : 5'd0;
+                end
+                4'd15: begin 
+                    inner_arbi_res =    inner_bigger_than_64_reg[0]  ? 5'd0 :
+                                        inner_bigger_than_64_reg[31] ? 5'd31 : 
+                                        inner_bigger_than_64_reg[16] ? 5'd16 : 
+                                        inner_bigger_than_64_reg[17] ? 5'd17 :
+                                        inner_bigger_than_64_reg[18] ? 5'd18 :
+                                        inner_bigger_than_64_reg[19] ? 5'd19 :
+                                        inner_bigger_than_64_reg[20] ? 5'd20 :
+                                        inner_bigger_than_64_reg[21] ? 5'd21 :
+                                        inner_bigger_than_64_reg[22] ? 5'd22 :
+                                        inner_bigger_than_64_reg[23] ? 5'd23 :
+                                        inner_bigger_than_64_reg[24] ? 5'd24 :
+                                        inner_bigger_than_64_reg[25] ? 5'd25 :
+                                        inner_bigger_than_64_reg[26] ? 5'd26 :
+                                        inner_bigger_than_64_reg[27] ? 5'd27 :
+                                        inner_bigger_than_64_reg[28] ? 5'd28 :
+                                        inner_bigger_than_64_reg[29] ? 5'd29 :
+                                        inner_bigger_than_64_reg[30] ? 5'd30 : 5'd0;
+                end
+                default:
+                    inner_arbi_res = 5'd0;
+            endcase
             inner_mem_enough_reg = 1'b1;
             compute_inner_done = 1'b1;
         end
         else begin 
-            compute_inner_res = (8{port_belong_pram[0]} & pram_free_space_reg[7:0]) + 
-                                (8{port_belong_pram[1]} & pram_free_space_reg[15:8]) + 
-                                (8{port_belong_pram[2]} & pram_free_space_reg[23:16]) + 
-                                (8{port_belong_pram[3]} & pram_free_space_reg[31:24]) + 
-                                (8{port_belong_pram[4]} & pram_free_space_reg[39:32]) + 
-                                (8{port_belong_pram[5]} & pram_free_space_reg[47:40]) + 
-                                (8{port_belong_pram[6]} & pram_free_space_reg[55:48]) + 
-                                (8{port_belong_pram[7]} & pram_free_space_reg[63:56]) + 
-                                (8{port_belong_pram[8]} & pram_free_space_reg[71:64]) + 
-                                (8{port_belong_pram[9]} & pram_free_space_reg[79:72]) + 
-                                (8{port_belong_pram[10]} & pram_free_space_reg[87:80]) + 
-                                (8{port_belong_pram[11]} & pram_free_space_reg[95:88]) +
-                                (8{port_belong_pram[12]} & pram_free_space_reg[103:96]) +
-                                (8{port_belong_pram[13]} & pram_free_space_reg[111:104]) +
-                                (8{port_belong_pram[14]} & pram_free_space_reg[119:112]) +
-                                (8{port_belong_pram[15]} & pram_free_space_reg[127:120]) +
-                                (8{port_belong_pram[16]} & pram_free_space_reg[135:128]) +
-                                (8{port_belong_pram[17]} & pram_free_space_reg[143:136]) +
-                                (8{port_belong_pram[18]} & pram_free_space_reg[151:144]) +
-                                (8{port_belong_pram[19]} & pram_free_space_reg[159:152]) +
-                                (8{port_belong_pram[20]} & pram_free_space_reg[167:160]) +
-                                (8{port_belong_pram[21]} & pram_free_space_reg[175:168]) +
-                                (8{port_belong_pram[22]} & pram_free_space_reg[183:176]) +
-                                (8{port_belong_pram[23]} & pram_free_space_reg[191:184]) +
-                                (8{port_belong_pram[24]} & pram_free_space_reg[199:192]) +
-                                (8{port_belong_pram[25]} & pram_free_space_reg[207:200]) +
-                                (8{port_belong_pram[26]} & pram_free_space_reg[215:208]) +
-                                (8{port_belong_pram[27]} & pram_free_space_reg[223:216]) +
-                                (8{port_belong_pram[28]} & pram_free_space_reg[231:224]) +
-                                (8{port_belong_pram[29]} & pram_free_space_reg[239:232]) +
-                                (8{port_belong_pram[30]} & pram_free_space_reg[247:240]) +
-                                (8{port_belong_pram[31]} & pram_free_space_reg[255:248]);
-            if (compute_inner_res >= mem_apply_num_reg) begin 
-                inner_mem_enough_reg = 1'b1;
-                compute_inner_done = 1'b1;
-            end
-            else begin 
-                inner_mem_enough_reg = 1'b0;
-                compute_inner_done = 1'b1;
-            end
+            // 单片提供所有空间
+            case(priority_set)
+                4'd0: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd1: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd2: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd3: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd4: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd5: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd6: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd7: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd8: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd9: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd10: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd11: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd12: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd13: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd14: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+                4'd15: begin 
+                    if (pram_free_space_reg[6:0] >= mem_apply_num_reg) begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[31] && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd31;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[16] && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd16;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[17] && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd17;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[18] && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd18;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[19] && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd19;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[20] && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd20;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[21] && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd21;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[22] && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd22;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[23] && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd23;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[24] && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd24;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[25] && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd25;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[26] && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd26;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[27] && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd27;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[28] && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd28;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[29] && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd29;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else if (port_belong_pram[30] && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin  
+                        inner_arbi_res = 5'd30;
+                        inner_mem_enough_reg = 1'b1;
+                        compute_inner_done = 1'b1;
+                    end
+                    else begin
+                        inner_arbi_res = 5'd0;
+                        inner_mem_enough_reg = 1'b0;
+                        compute_inner_done = 1'b1;
+                    end
+                end
+            endcase
         end
     end
-    else if (state == S_DONE) begin
+    else if (next_state == S_DONE) begin
         inner_mem_enough_reg = 1'b0;
         compute_inner_done = 1'b0;
-        compute_inner_res = 12'd0;
+        inner_arbi_res = 5'd0;
     end
     else begin 
         inner_mem_enough_reg = inner_mem_enough_reg;
         compute_inner_done = compute_inner_done;
-        compute_inner_res = compute_inner_res;
+        inner_arbi_res = inner_arbi_res;
     end
 end
 
@@ -289,22 +2039,1411 @@ always @(i_clk or i_rst_n) begin
     if (~i_rst_n) begin 
         scan_chip_done = 1'b0;
         exist_idle_chip_reg = 1'b0;
+        pram_chip_port_num = 5'd0;
     end
-    else if (state == S_COMPUTE && scan_chip_done == 1'b0) begin 
-        if (|pram_state_reg != 0) begin 
-            exist_idle_chip_reg = 1'b1;
-            scan_chip_done = 1'b1;
-        end
-        else begin 
-            exist_idle_chip_reg = 1'b0;
-            scan_chip_done = 1'b1;
-        end
+    else if (next_state == S_COMPUTE && scan_chip_done == 1'b0) begin 
+        case(priority_set)
+            4'd0: begin 
+                if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd1: begin 
+                if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd2: begin 
+                if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd3: begin 
+                if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd4: begin 
+                if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd5: begin 
+                if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd6: begin 
+                if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd7: begin 
+                if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd8: begin 
+                if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd9: begin 
+                if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd10: begin 
+                if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd11: begin 
+                if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd12: begin 
+                if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd13: begin 
+                if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd14: begin 
+                if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+            4'd15: begin 
+                if (~pram_state_reg[31]) begin 
+                    pram_chip_port_num = 5'd31;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[16]) begin 
+                    pram_chip_port_num = 5'd16;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[17] == 1'b1) begin 
+                    pram_chip_port_num = 5'd17;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[18]) begin 
+                    pram_chip_port_num = 5'd18;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[19]) begin 
+                    pram_chip_port_num = 5'd19;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[20]) begin 
+                    pram_chip_port_num = 5'd20;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[21]) begin 
+                    pram_chip_port_num = 5'd21;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[22]) begin 
+                    pram_chip_port_num = 5'd22;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[23]) begin 
+                    pram_chip_port_num = 5'd23;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[24]) begin 
+                    pram_chip_port_num = 5'd24;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[25]) begin 
+                    pram_chip_port_num = 5'd25;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[26]) begin 
+                    pram_chip_port_num = 5'd26;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[27]) begin 
+                    pram_chip_port_num = 5'd27;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[28]) begin 
+                    pram_chip_port_num = 5'd28;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[29]) begin 
+                    pram_chip_port_num = 5'd29;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else if (~pram_state_reg[30]) begin 
+                    pram_chip_port_num = 5'd30;
+                    exist_idle_chip_reg = 1'b1;
+                    scan_chip_done = 1'b1;
+                end
+                else begin 
+                    pram_chip_port_num = 5'd0;
+                    exist_idle_chip_reg = 1'b0;
+                    scan_chip_done = 1'b1;
+                end
+            end
+        endcase
     end
-    else if (state == S_DONE) begin
+    else if (next_state == S_DONE) begin
+        pram_chip_port_num = 5'd0;
         exist_idle_chip_reg = 1'b0;
         scan_chip_done = 1'b0;
     end
     else begin 
+        pram_chip_port_num = pram_chip_port_num;
         exist_idle_chip_reg = exist_idle_chip_reg;
         scan_chip_done = scan_chip_done;
     end
@@ -315,65 +3454,2693 @@ always @(i_clk or i_rst_n) begin
     if (~i_rst_n) begin 
         outer_mem_enough_reg = 1'b0;
         compute_outer_done = 1'b0;
-        compute_outer_res = 12'd0;
+        outer_arbi_res = 5'd0;
     end
-    else if (state == S_COMPUTE && compute_outer_done == 1'b0) begin 
-        if (|outer_bigger_than_128_reg) begin 
-            outer_mem_enough_reg = 1'b1;
-            compute_outer_done = 1'b1;
-        end
-        else begin
-            compute_outer_res = ((~port_belong_pram[0]) && pram_free_space_reg[7:0]) + 
-                                ((~port_belong_pram[1]) && pram_free_space_reg[15:8]) + 
-                                ((~port_belong_pram[2]) && pram_free_space_reg[23:16]) + 
-                                ((~port_belong_pram[3]) && pram_free_space_reg[31:24]) + 
-                                ((~port_belong_pram[4]) && pram_free_space_reg[39:32]) + 
-                                ((~port_belong_pram[5]) && pram_free_space_reg[47:40]) + 
-                                ((~port_belong_pram[6]) && pram_free_space_reg[55:48]) + 
-                                ((~port_belong_pram[7]) && pram_free_space_reg[63:56]) + 
-                                ((~port_belong_pram[8]) && pram_free_space_reg[71:64]) + 
-                                ((~port_belong_pram[9]) && pram_free_space_reg[79:72]) + 
-                                ((~port_belong_pram[10]) && pram_free_space_reg[87:80]) + 
-                                ((~port_belong_pram[11]) && pram_free_space_reg[95:88]) +
-                                ((~port_belong_pram[12]) && pram_free_space_reg[103:96]) +
-                                ((~port_belong_pram[13]) && pram_free_space_reg[111:104]) +
-                                ((~port_belong_pram[14]) && pram_free_space_reg[119:112]) +
-                                ((~port_belong_pram[15]) && pram_free_space_reg[127:120]) +
-                                ((~port_belong_pram[16]) && pram_free_space_reg[135:128]) +
-                                ((~port_belong_pram[17]) && pram_free_space_reg[143:136]) +
-                                ((~port_belong_pram[18]) && pram_free_space_reg[151:144]) +
-                                ((~port_belong_pram[19]) && pram_free_space_reg[159:152]) +
-                                ((~port_belong_pram[20]) && pram_free_space_reg[167:160]) +
-                                ((~port_belong_pram[21]) && pram_free_space_reg[175:168]) +
-                                ((~port_belong_pram[22]) && pram_free_space_reg[183:176]) +
-                                ((~port_belong_pram[23]) && pram_free_space_reg[191:184]) +
-                                ((~port_belong_pram[24]) && pram_free_space_reg[199:192]) +
-                                ((~port_belong_pram[25]) && pram_free_space_reg[207:200]) +
-                                ((~port_belong_pram[26]) && pram_free_space_reg[215:208]) +
-                                ((~port_belong_pram[27]) && pram_free_space_reg[223:216]) +
-                                ((~port_belong_pram[28]) && pram_free_space_reg[231:224]) +
-                                ((~port_belong_pram[29]) && pram_free_space_reg[239:232]) +
-                                ((~port_belong_pram[30]) && pram_free_space_reg[247:240]) +
-                                ((~port_belong_pram[31]) && pram_free_space_reg[255:248]);
-            if (compute_outer_res >= mem_apply_num_reg) begin 
-                outer_mem_enough_reg = 1'b1;
-                compute_outer_done = 1'b1;
+    else if (next_state == S_COMPUTE && compute_outer_done == 1'b0) begin 
+        case(priority_set)
+            4'd0: begin 
+                if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
             end
-            else begin 
-                outer_mem_enough_reg = 1'b0;
-                compute_outer_done = 1'b1;
+            4'd1: begin 
+                if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
             end
-        end
+            4'd2: begin 
+                if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd3: begin 
+                if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd4: begin 
+                if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd5: begin 
+                if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd6: begin 
+                if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd7: begin 
+                if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd8: begin 
+                if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd9: begin 
+                if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd10: begin 
+                if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd11: begin 
+                if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd12: begin 
+                if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd13: begin 
+                if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd14: begin 
+                if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+            4'd15: begin 
+                if ((~port_belong_pram[31]) && (pram_free_space_reg[223:217] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd31;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[0]) && (pram_free_space_reg[6:0] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[1]) && (pram_free_space_reg[13:7] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[2]) && (pram_free_space_reg[20:14] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd2;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[3]) && (pram_free_space_reg[27:21] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd3;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[4]) && (pram_free_space_reg[34:28] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd4;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[5]) && (pram_free_space_reg[41:35] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd5;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[6]) && (pram_free_space_reg[47:42] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd6;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[7]) && (pram_free_space_reg[55:48] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd7;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[8]) && (pram_free_space_reg[62:56] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd8;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[9]) && (pram_free_space_reg[69:63] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd9;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[10]) && (pram_free_space_reg[76:70] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd10;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[11]) && (pram_free_space_reg[83:77] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd11;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[12]) && (pram_free_space_reg[90:84] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd12;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[13]) && (pram_free_space_reg[97:91] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd13;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[14]) && (pram_free_space_reg[104:98] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd14;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[15]) && (pram_free_space_reg[111:105] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd15;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[16]) && (pram_free_space_reg[118:112] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd16;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[17]) && (pram_free_space_reg[125:119] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd17;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[18]) && (pram_free_space_reg[132:126] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd18;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[19]) && (pram_free_space_reg[139:133] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd19;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[20]) && (pram_free_space_reg[146:140] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd20;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[21]) && (pram_free_space_reg[153:147] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd21;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[22]) && (pram_free_space_reg[160:154] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd1;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[23]) && (pram_free_space_reg[167:161] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd23;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[24]) && (pram_free_space_reg[174:168] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd24;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[25]) && (pram_free_space_reg[181:175] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd25;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[26]) && (pram_free_space_reg[188:182] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd26;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[27]) && (pram_free_space_reg[195:189] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd27;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[28]) && (pram_free_space_reg[202:196] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd28;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[29]) && (pram_free_space_reg[209:203] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd29;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else if ((~port_belong_pram[30]) && (pram_free_space_reg[216:210] >= mem_apply_num_reg)) begin 
+                    outer_arbi_res = 5'd30;
+                    outer_mem_enough_reg = 1'b1;
+                    compute_outer_done = 1'b1;
+                end
+                else begin 
+                    outer_arbi_res = 5'd0;
+                    outer_mem_enough_reg = 1'b0;
+                    compute_outer_done = 1'b1;
+                end
+            end
+        endcase
     end
-    else if (state == S_DONE) begin 
+    else if (next_state == S_DONE) begin 
         outer_mem_enough_reg = 1'b0;
         compute_outer_done = 1'b0;
-        compute_outer_res = 12'd0;
+        outer_arbi_res = 5'd0;
     end
     else begin 
         outer_mem_enough_reg = outer_mem_enough_reg;
         compute_outer_done = compute_outer_done;
-        compute_inner_res = compute_outer_res;
+        outer_arbi_res = outer_arbi_res;
     end
 end
 
@@ -400,49 +6167,80 @@ end
 // arbi_res、arbi_pram_num
 always @(posedge i_clk or negedge i_rst_n) begin 
     if (~i_rst_n) begin 
-        arbi_res <= 65'd0;
-        arbi_pram_num <= 5'd0; 
+        arbi_res <= 12'd0;
+        error_flag <= 1'b0;
     end
-    else if (state == S_ABRI_ALONE) begin 
-        if (|inner_bigger_than_128_reg) begin 
-            arbi_pram_num <= 5'd1;
-            case (inner_bigger_than_128_reg)                             // 一共需要检测17个标志位
-                32'bxxxx_xxxx_xxxx_xxxx_xxxx_xxxx_xxxx_xxx1:                 
-                    arbi_res[12:0] <= {5'b0_0000, mem_apply_num_reg};
-                32'bxxxx_xxxx_xxxx_xxx1_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0000, mem_apply_num_reg};
-                32'bxxxx_xxxx_xxxx_xx10_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0001, mem_apply_num_reg};
-                32'bxxxx_xxxx_xxxx_x100_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0010, mem_apply_num_reg};
-                32'bxxxx_xxxx_xxxx_1000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0011, mem_apply_num_reg};
-                32'bxxxx_xxxx_xxx1_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0100, mem_apply_num_reg};
-                32'bxxxx_xxxx_xx10_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0101, mem_apply_num_reg};
-                32'bxxxx_xxxx_x100_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0110, mem_apply_num_reg};
-                32'bxxxx_xxxx_1000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_0111, mem_apply_num_reg};
-                32'bxxxx_xxx1_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1000, mem_apply_num_reg};
-                32'bxxxx_xx10_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1001, mem_apply_num_reg};
-                32'bxxxx_x100_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1010, mem_apply_num_reg};
-                32'bxxxx_1000_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1011, mem_apply_num_reg};
-                32'bxxx1_0000_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1100, mem_apply_num_reg};
-                32'bxx10_0000_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1101, mem_apply_num_reg};
-                32'bx100_0000_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1110, mem_apply_num_reg};
-                32'b1000_0000_0000_0000_xxxx_xxxx_xxxx_xxx0:
-                    arbi_res[12:0] <= {5'b1_1111, mem_apply_num_reg};
-            endcase
-        end
+    else if (next_state == S_ABRI_ALONE) begin 
+        arbi_res <= {inner_arbi_res, mem_apply_num_reg};
+        scheme_done <= 1'b1;
+        error_flag <= 1'b0;
+        o_pram_chip_apply_req <= 1'b0;
+        o_pram_chip_port_num <= 5'd0;
+    end
+    else if (next_state == S_APPLY_CHIP) begin 
+        case ({i_pram_chip_apply_success, i_pram_chip_apply_fail})
+            2'b00: begin 
+                o_pram_chip_apply_req <= 1'b1;
+                o_pram_chip_port_num <= pram_chip_port_num;
+            end
+            2'b01: begin 
+                scheme_done <= 1'b1;
+            end
+            2'b10: begin 
+                scheme_done <= 1'b1;
+                arbi_res <= {pram_chip_port_num, mem_apply_num_reg};
+            end
+            2'b11: begin 
+                error_flag <= 1'b1;
+                scheme_done <= 1'b1;
+            end
+            default: begin 
+                error_flag <= 1'b1;
+            end
+        endcase
+    end
+    else if (next_state == S_ARBI_SHARE) begin 
+        o_pram_chip_apply_req <= 1'b0;
+        o_pram_chip_port_num <= 5'd0;
+        arbi_res <= {outer_arbi_res, mem_apply_num_reg};
+        scheme_done <= 1'b1;
+        error_flag <= 1'b0;
+    end
+    else if(next_state == S_DONE)begin 
+        o_pram_chip_apply_req <= 1'b0;
+        o_pram_chip_port_num <= 5'd0;
+        error_flag <= 1'b0;
+        arbi_res <= 13'b0;
+        scheme_done <= 1'b0;
+    end
+    else begin 
+        o_pram_chip_apply_req <= 1'b0;
+        o_pram_chip_port_num <= 5'd0;
+        error_flag <= 1'b0;
+        arbi_res <= arbi_res;
+        scheme_done <= 1'b0;
+    end
+end
+
+// 缓存申请
+assign o_mem_vt_addr = i_mem_vt_addr;
+assign o_data_vld = i_data_vld;
+
+always @(posedge i_clk or negedge i_rst_n) begin
+    if (~i_rst_n) begin 
+        o_pram_mem_apply_num <= 7'd0;
+        o_pram_mem_apply_port_num <= 5'd0;
+        o_pram_mem_apply_req <= 1'b0;
+    end
+    else if (next_state == S_APPLY_MEM && ~i_pram_apply_mem_done) begin 
+        o_pram_mem_apply_num <= arbi_res[6:0];
+        o_pram_mem_apply_port_num <= arbi_res[11:7];
+        o_pram_mem_apply_req <= 1'b1;
+    end
+    else begin 
+        o_pram_mem_apply_num <= 7'd0;
+        o_pram_mem_apply_port_num <= 5'd0;
+        o_pram_mem_apply_req <= 1'b0;
     end
 end
 
