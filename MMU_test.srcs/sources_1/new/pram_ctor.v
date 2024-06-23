@@ -1,24 +1,6 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 2024/04/29 21:33:21
-// Design Name: 
-// Module Name: pram_ctor
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: PRAM管理模块，内含两个状态机，分别为分配状态机和回收状态机（内存回收和sram无关，仅需要在pram上做更改即可）
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
-`include "defines.v"
+
+`include "./defines.v"
 
 /*
 `define PRAM_NUM 32                              // PRAM数量
@@ -34,13 +16,13 @@
 */
 
 module pram_ctor #(
-    PRAM_NUMBER = 16                               // pram号
+    PRAM_NUMBER = 16
 )(
-    input  i_clk_250,
+    input  i_clk,
     input  i_rst_n,
 
     // 芯片申请
-    input  [`PORT_NUM-1:0]  i_chip_apply_sig,             // 芯片申请信号
+    input      [`PORT_NUM-1:0]  i_chip_apply_sig,             // 芯片申请信号
 
     output reg [`PORT_NUM-1:0]  o_chip_apply_refuse,          // 芯片申请拒绝信号
     output reg [`PORT_NUM-1:0]  o_chip_apply_success,         // 芯片申请同意信号
@@ -48,12 +30,11 @@ module pram_ctor #(
     // 内存申请
     input      [`PORT_NUM*`DATA_FRAME_NUM_WIDTH-1:0]          i_mem_apply_num,          // 内存申请数量
     input      [`PORT_NUM-1:0]                                i_mem_apply_sig,          // 内存申请信号
-    output     [`VT_ADDR_WIDTH-1:0]                           o_mem_addr,               // 输出内存地址（pram号 + 物理地址）
-    output reg                                                o_mem_addr_vld_sig,       // 输出内存地址有效标志位
-    output                                                    o_mem_apply_done,         // 内存分配结束标志位
+    output reg [`PORT_NUM*`VT_ADDR_WIDTH-1:0]                 o_mem_addr,               // 输出内存地址（pram号 + 物理地址）
+    output reg [`PORT_NUM-1:0]                                o_mem_addr_vld_sig,       // 输出内存地址有效标志位
+    output reg [`PORT_NUM-1:0]                                o_mem_apply_done,         // 内存分配结束标志位
     output reg [`PORT_NUM-1:0]                                o_mem_apply_refuse,       // 申请拒绝标志位
-    output                                                    o_mem_clk,                // fifo时钟
-    output     [`PORT_NUM_WIDTH-1:0]                          o_mem_malloc_port,
+    output reg [`PORT_NUM-1:0]                                o_mem_clk,                // fifo时钟
 
     output                                                    o_init_done,
 
@@ -63,13 +44,13 @@ module pram_ctor #(
     output                               o_pram_state,
 
     /* -------------数据读取、内存回收端口----------- */
-    input  [`PORT_NUM-1:0]                                              i_read_apply_sig,         // 读申请信号 
-    input  [`PRAM_NUM_WIDTH+`MEM_ADDR_WIDTH+`DATA_FRAME_NUM_WIDTH-1:0]  i_pd,                     // 数据包描述信息
-    output [`MEM_ADDR_WIDTH-1:0]                                        o_portb_addr,             // 数据包待读取分组地址
-    output reg                                                          o_portb_addr_vld,
-    output [`PORT_NUM_WIDTH-1:0]                                        o_aim_port_num,           // 输出目的端口号
+    input      [`PORT_NUM-1:0]                                              i_read_apply_sig,         // 读申请信号 
+    input      [`PORT_NUM*(`VT_ADDR_WIDTH+`DATA_FRAME_NUM_WIDTH)-1:0]       i_pd,                     // 数据包描述信息
+    output     [`MEM_ADDR_WIDTH-1:0]                                        o_portb_addr,
+    output reg                                                              o_portb_addr_vld,
+    output     [`PORT_NUM_WIDTH-1:0]                                        o_aim_port_num,           // 输出目的端口号
 
-    output                                                              o_read_clk                // 读取时钟
+    output                                                                  o_read_clk                // 读取时钟
 );
 
 // 状态转移标志位
@@ -89,8 +70,9 @@ reg  [`MEM_ADDR_WIDTH-1:0] portb_addr;                         // 端口B控制�
 wire [`MEM_ADDR_WIDTH-1:0] portb_dout;  
 reg  [`MEM_ADDR_WIDTH-1:0] portb_din;    
 
-reg div2_reg; // 由于要将读出的数据赋值给地址位，因此需要两个周期实现，因此计数器时钟为两个位宽
+reg div2_reg;                                                  // 由于要将读出的数据赋值给地址位，因此需要两个周期实现，因此计数器时钟为两个位宽
 reg div2_reg_rvs;
+reg mem_addr_vld_sig;
 
 // pram状态寄存器
 reg  [`PORT_NUM_WIDTH-1:0]                         belong_port_num;                    // pram所属端口号
@@ -123,16 +105,17 @@ reg  change_apply;
 reg  change_reclaim;
 
 /* 内存申请FSM */
-localparam S_RST_APPLY    = 5'b0_0001;          // 复位状态
-localparam S_IDLE_APPLY   = 5'b0_0010;          // 空闲状态
-localparam S_CHIP_APPLY   = 5'b0_0100;          // 芯片申请状态
-localparam S_ARBI_APPLY   = 5'b0_1000;          // 多端口申请仲裁状态
-localparam S_MALLOC_APPLY = 5'b1_0000;          // 内存分配状态
+localparam S_RST_APPLY    = 6'b00_0001;          // 复位状态
+localparam S_IDLE_APPLY   = 6'b00_0010;          // 空闲状态
+localparam S_CHIP_APPLY   = 6'b00_0100;          // 芯片申请状态
+localparam S_ARBI_APPLY   = 6'b00_1000;          // 多端口申请仲裁状态
+localparam S_MALLOC_APPLY = 6'b01_0000;          // 内存分配状态
+localparam S_DONE         = 6'b10_0000;
 
-reg [4:0] c_state_apply;
-reg [4:0] n_state_apply;
+reg [5:0] c_state_apply;
+reg [5:0] n_state_apply;
 
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n)
         c_state_apply <= S_RST_APPLY;
     else
@@ -143,63 +126,56 @@ always @(*) begin
     case(c_state_apply) 
         S_RST_APPLY:
             if (init_done)
-                n_state_apply <= S_IDLE_APPLY;
+                n_state_apply = S_IDLE_APPLY;
             else
-                n_state_apply <= S_RST_APPLY;
+                n_state_apply = S_RST_APPLY;
         S_IDLE_APPLY:
             if (pram_work && |i_mem_apply_sig)
-                n_state_apply <= S_ARBI_APPLY;
+                n_state_apply = S_ARBI_APPLY;
             else if (~pram_work && |i_chip_apply_sig)
-                n_state_apply <= S_CHIP_APPLY;
+                n_state_apply = S_CHIP_APPLY;
             else
-                n_state_apply <= S_IDLE_APPLY;
+                n_state_apply = S_IDLE_APPLY;
         S_CHIP_APPLY:
             if (pram_work)
-                n_state_apply <= S_ARBI_APPLY;
+                n_state_apply = S_ARBI_APPLY;
             else
-                n_state_apply <= S_CHIP_APPLY;
+                n_state_apply = S_CHIP_APPLY;
         S_ARBI_APPLY:
             if (apply_arbi_done)
-                n_state_apply <= S_MALLOC_APPLY;
+                n_state_apply = S_MALLOC_APPLY;
             else
-                n_state_apply <= S_ARBI_APPLY;
+                n_state_apply = S_ARBI_APPLY;
         S_MALLOC_APPLY:
             if (malloc_done)
-                n_state_apply <= S_IDLE_APPLY;
+                n_state_apply = S_DONE;
             else
-                n_state_apply <= S_MALLOC_APPLY;
+                n_state_apply = S_MALLOC_APPLY;
+        S_DONE:
+            n_state_apply = S_IDLE_APPLY;
         default:
-            n_state_apply <= S_IDLE_APPLY;
+            n_state_apply = S_IDLE_APPLY;
     endcase
 end
 
-assign o_mem_malloc_port = malloc_port;
-
 assign o_pram_state = pram_work;
-
-assign o_mem_clk = div2_reg_rvs;
-assign o_read_clk = div2_reg_reclaim_rvs;
-
 assign o_portb_addr = portb_addr;
-
 assign o_init_done = init_done;
-assign o_mem_apply_done = malloc_done;
 assign o_aim_port_num = read_port;
-
-assign o_mem_addr[10:0] = porta_addr;
-assign o_mem_addr[15:11] = PRAM_NUMBER;
 
 assign o_remaining_mem = (pram_free_list[11:0] >= 64) ? 64 : pram_free_list[6:0];
 assign o_bigger_64 = (pram_free_list[11:0] >= 64) ? 1 : 0;
 
+assign o_read_clk = div2_reg_reclaim_rvs;
+
 /* pram控制信号 */
 // 地址线、数据线（初始化、内存回收）
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         porta_addr <= 11'd0;
         porta_din <= 11'd1;
         init_done <= 1'b0;
-        o_mem_addr_vld_sig <= 1'b0;
+        mem_addr_vld_sig <= 1'b0;
         malloc_done <= 1'b0;
         change_apply <= 1'b0;
     end
@@ -218,7 +194,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
     end
     else if (n_state_apply == S_ARBI_APPLY) begin 
         porta_addr <= pram_free_list[33:23];
-        o_mem_addr_vld_sig <= 1'b1;
+        mem_addr_vld_sig <= 1'b1;
     end
     else if (c_state_apply == S_MALLOC_APPLY && ~malloc_done) begin 
         if (porta_rd_cnt == 7'd0 && div2_reg == 1'b1) begin 
@@ -226,7 +202,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
             malloc_done <= 1'b1; 
         end
         else if (porta_rd_cnt == 7'd0 && div2_reg == 1'b0) begin 
-            o_mem_addr_vld_sig <= 1'b0;
+            mem_addr_vld_sig <= 1'b0;
         end
         else begin 
             porta_addr <= porta_dout;
@@ -242,7 +218,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
 end
 
 // wea写使能信号
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n)
         wea <= 1'b0;
     else if (c_state_apply == S_RST_APPLY && init_done == 1'b0) begin 
@@ -255,7 +231,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
         wea <= 1'b0;
 end
 
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n)
         div2_reg <= 1'b0;
     else if (c_state_apply == S_MALLOC_APPLY)
@@ -264,7 +240,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
         div2_reg <= 1'b0;
 end
 
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n)
         div2_reg_rvs <= 1'b0;
     else if (n_state_apply == S_MALLOC_APPLY)
@@ -274,7 +250,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
 end
 
 // 读地址计数器
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         porta_rd_cnt <= 7'd0;
     end
@@ -294,13 +270,13 @@ end
 
 // pram实例化
 pram_11x2048 pram_u (
-    .clka(i_clk_250),
+    .clka(i_clk),
     .wea(wea),
     .addra(porta_addr),
     .dina(porta_din),
     .douta(porta_dout),
 
-    .clkb(i_clk_250),
+    .clkb(i_clk),
     .web(web),
     .addrb(portb_addr),
     .dinb(portb_din),
@@ -309,21 +285,18 @@ pram_11x2048 pram_u (
 
 /* 端口交互信号，芯片申请、内存申请 */
 // 芯片申请信号
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         o_chip_apply_refuse <= 16'd0;
         o_chip_apply_success <= 16'd0;
-        pram_work <= 1'b0;
         belong_port_num <= 4'd0;
     end
     else if (c_state_apply == S_RST_APPLY) begin 
         if (PRAM_NUMBER < 16) begin 
             belong_port_num <= PRAM_NUMBER;
-            pram_work = 1'b1;
         end
         else begin 
             belong_port_num <= 4'd0;
-            pram_work = 1'b0;
         end
     end
     else if (n_state_apply == S_CHIP_APPLY && ~pram_work) begin 
@@ -1723,16 +1696,32 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
                 end
             end
         endcase
-        pram_work <= 1'b1;
-    end
-    else begin 
-        o_chip_apply_refuse <= 16'd0;
-        o_chip_apply_success <= 16'd0;
     end
 end
 
+// pram_work
+always @(posedge i_clk or negedge i_rst_n) begin 
+    if (~i_rst_n) begin 
+        pram_work <= 1'b1;
+    end
+    else if (c_state_apply == S_RST_APPLY) begin 
+        if (PRAM_NUMBER < 16) begin 
+            pram_work <= 1'b1;
+        end
+        else begin 
+            pram_work <= 1'b0;
+        end
+    end
+    else if (n_state_apply == S_CHIP_APPLY && ~pram_work) begin 
+        pram_work <= 1'b1;
+    end
+    else if (n_state_apply == S_DONE && PRAM_NUMBER < 16 && pram_free_list[11:0] == 12'h800) begin 
+        pram_work <= 1'b0;
+    end 
+end
+
 // 端口申请仲裁
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         rr <= 4'd0;
         apply_arbi_done <= 1'b0;
@@ -2060,47 +2049,34 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
     end
 end
 
+
 // malloc_num赋值
-always @(malloc_port or i_rst_n) begin
-    if (~i_rst_n)
-        malloc_num <= 8'd0;
+always @(malloc_port or i_rst_n) begin : prot_sel
+    integer i;
+    if (~i_rst_n) begin 
+        malloc_num = 8'd0;
+        o_mem_addr = 'd0;
+        o_mem_addr_vld_sig = 'd0;
+        o_mem_clk = 'd0;
+        o_mem_apply_done = 'd0;
+    end
     else begin 
-        case(malloc_port) 
-            4'd0:
-                malloc_num <= i_mem_apply_num[6:0];
-            4'd1:
-                malloc_num <= i_mem_apply_num[13:7];
-            4'd2:
-                malloc_num <= i_mem_apply_num[20:14];
-            4'd3:
-                malloc_num <= i_mem_apply_num[27:21];
-            4'd4:
-                malloc_num <= i_mem_apply_num[34:28];
-            4'd5:
-                malloc_num <= i_mem_apply_num[41:35];
-            4'd6:
-                malloc_num <= i_mem_apply_num[47:42];
-            4'd7:
-                malloc_num <= i_mem_apply_num[55:48];
-            4'd8:
-                malloc_num <= i_mem_apply_num[62:56];
-            4'd9:
-                malloc_num <= i_mem_apply_num[69:63];
-            4'd10:
-                malloc_num <= i_mem_apply_num[76:70];
-            4'd11:
-                malloc_num <= i_mem_apply_num[83:77];
-            4'd12:
-                malloc_num <= i_mem_apply_num[90:84];
-            4'd13:
-                malloc_num <= i_mem_apply_num[97:91];
-            4'd14:
-                malloc_num <= i_mem_apply_num[104:98];
-            4'd15:
-                malloc_num <= i_mem_apply_num[111:105];
-            default:
-                malloc_num <= 8'd0;
-        endcase
+        malloc_num = i_mem_apply_num[malloc_port*`DATA_FRAME_NUM_WIDTH+:`DATA_FRAME_NUM_WIDTH];
+        for (i = 0; i < `PORT_NUM; i = i + 1) begin 
+            if (i == malloc_port) begin 
+                o_mem_addr[(i*`VT_ADDR_WIDTH+11)+:5] = PRAM_NUMBER;
+                o_mem_addr[i*`VT_ADDR_WIDTH+:11] = porta_addr;
+                o_mem_addr_vld_sig[i] = mem_addr_vld_sig;
+                o_mem_clk[i] = div2_reg_rvs;
+                o_mem_apply_done[i] = malloc_done;
+            end
+            else begin 
+                o_mem_addr[i*`VT_ADDR_WIDTH+:16] = 'd0;
+                o_mem_addr_vld_sig[i] = 'd0;
+                o_mem_clk[i] = 'd0;
+                o_mem_apply_done[i] = 'd0;
+            end
+        end
     end
 end
 
@@ -2114,7 +2090,7 @@ localparam S_LOAD_FIRST_ADDR = 5'b1_0000;                  // 加载读取首地
 reg [4:0] c_state_reclaim;
 reg [4:0] n_state_reclaim;
 
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n)
         c_state_reclaim <= S_IDLE_RECLAIM;
     else 
@@ -2150,7 +2126,7 @@ always @(*) begin
     endcase
 end
 
-always @(posedge i_clk_250 or negedge i_rst_n) begin 
+always @(posedge i_clk or negedge i_rst_n) begin 
     if (~i_rst_n) begin 
         read_arbi_done <= 1'b0;
         rr_reclaim <= 4'd0;
@@ -2459,7 +2435,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
 end
 
 // 端口b数据读取
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         portb_addr <= 11'd0;
         read_done <= 1'b0;
@@ -2489,7 +2465,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
 end
 
 // web
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin
         web <= 1'b0;
         reclaim_done <= 1'b0;
@@ -2508,7 +2484,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
 end
 
 // portb_rd_cnt端口b读地址计数器、read_num
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         read_num <= 7'd0;
         portb_rd_cnt <= 7'd0;
@@ -2529,7 +2505,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
     end
 end
 
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n)
         div2_reg_reclaim <= 1'b0;
     else if (c_state_reclaim == S_READ_RECLAIM)
@@ -2538,7 +2514,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
         div2_reg_reclaim <= 1'b0;
 end
 
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n)
         div2_reg_reclaim_rvs <= 1'b0;
     else if (n_state_reclaim == S_READ_RECLAIM)
@@ -2548,7 +2524,7 @@ always @(posedge i_clk_250 or negedge i_rst_n) begin
 end
 
 //对pram进行赋值
-always @(posedge i_clk_250 or negedge i_rst_n) begin
+always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         if (PRAM_NUMBER >=16)
             pram_free_list <= {11'd0, 11'h7ff, 12'h800};
