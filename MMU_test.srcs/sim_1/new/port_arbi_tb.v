@@ -24,7 +24,7 @@ module port_arbi_tb();
 reg clk;
 reg rst_n;
 reg [31:0] pram_state;
-reg        pram_apply_mem_done;
+reg [31:0] pram_apply_mem_done;
 reg [223:0] pram_free_space;
 reg [31:0] bigger_than_128;
 
@@ -61,6 +61,7 @@ initial begin
     clk = 1'b0;
     rst_n = 1'b0;
     init_done = 32'hffff_ffff;
+    pram_apply_mem_done = 'd0;
 
     #10
     rst_n = 1'b1; 
@@ -79,7 +80,8 @@ initial begin
     mem_req = 1'b1;
     mem_apply_num = 7'd55;
     #100
-    pram_apply_mem_done = 1'b0;
+    pram_apply_mem_done = 'hffff_ffff;
+    mem_req = 'd0;
 end
 
 always #5 clk = ~clk;

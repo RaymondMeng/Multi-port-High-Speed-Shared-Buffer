@@ -50,7 +50,8 @@ module pram_ctor #(
     output reg                                                              o_portb_addr_vld,
     output     [`PORT_NUM_WIDTH-1:0]                                        o_aim_port_num,           // 输出目的端口号
 
-    output                                                                  o_read_clk                // 读取时钟
+    output                                                                  o_read_clk,               // 读取时钟
+    output                                                                  o_read_done
 );
 
 // 状态转移标志位
@@ -167,6 +168,7 @@ assign o_remaining_mem = (pram_free_list[11:0] >= 64) ? 64 : pram_free_list[6:0]
 assign o_bigger_64 = (pram_free_list[11:0] >= 64) ? 1 : 0;
 
 assign o_read_clk = div2_reg_reclaim_rvs;
+assign o_read_done = read_done;
 
 /* pram控制信号 */
 // 地址线、数据线（初始化、内存回收）

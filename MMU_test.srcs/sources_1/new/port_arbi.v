@@ -53,7 +53,7 @@ module port_arbi #(
     input [`PRAM_NUM - 1:0]                                i_data_vld,                 // 输出数据有效位（作为FIFO的使能信号）
     input [(`VT_ADDR_WIDTH * `PRAM_NUM) - 1:0]             i_mem_vt_addr,              // 分配内存的虚拟地址
 
-    output reg [`PRAM_NUM * `PRAM_NUM_WIDTH - 1:0]         o_pram_mem_apply_port_num,  // 目标pram号，输出至接口模块进行分配
+    // output reg [`PRAM_NUM * `PRAM_NUM_WIDTH - 1:0]         o_pram_mem_apply_port_num,  // 目标pram号，输出至接口模块进行分配
     output reg [`PRAM_NUM - 1:0]                           o_pram_mem_apply_req,       // 数据请求信号
     output reg [`PRAM_NUM * `DATA_FRAME_NUM_WIDTH - 1:0]   o_pram_mem_apply_num,       // 缓存申请数量
 
@@ -61,10 +61,10 @@ module port_arbi #(
     input  [`PRAM_NUM - 1:0]                               i_pram_chip_apply_fail,     // pram片申请失败信号
 
     output reg [`PRAM_NUM - 1:0]                           o_pram_chip_apply_req,      // pram片申请信号
-    output reg [`PRAM_NUM * `PRAM_NUM_WIDTH - 1:0]         o_pram_chip_port_num,       // 申请的pram号   
+    // output reg [`PRAM_NUM * `PRAM_NUM_WIDTH - 1:0]         o_pram_chip_port_num,       // 申请的pram号   
 
     input  [`PRAM_NUM - 1:0]                               i_mem_malloc_clk,
-    output [`PRAM_NUM - 1:0]                               o_mem_malloc_clk,   
+    output reg                                             o_mem_malloc_clk,   
 
     // free list交互信号
     input                                                  i_mem_req,                  // 端口发起内存申请
@@ -88,6 +88,11 @@ reg compute_outer_done;                            // 外部空间比较完成
 reg [`PRAM_NUM_WIDTH - 1:0] inner_arbi_res;        // 内部仲裁结果寄存器（申请目标pram号）
 reg [`PRAM_NUM_WIDTH - 1:0] outer_arbi_res;        // 外部仲裁结果寄存器
 reg [`PRAM_NUM_WIDTH - 1:0] pram_chip_port_num;    // 申请pram所使用的端口号
+
+reg                         pram_chip_apply_success;
+reg                         pram_chip_apply_fail;
+reg                         pram_apply_mem_done;
+reg                         pram_apply_mem_refuse;
 
 reg inner_mem_enough_reg;                          // 标志位寄存器     
 reg outer_mem_enough_reg;                         
@@ -159,13 +164,13 @@ always @(*) begin
                 next_state = S_COMPUTE;
         S_ABRI_ALONE:
             if (scheme_done)
-                next_state<= S_APPLY_MEM;
+                next_state = S_APPLY_MEM;
             else
                 next_state = S_ABRI_ALONE;
         S_APPLY_CHIP:
-            if (scheme_done && i_pram_chip_apply_success && ~error_flag)
+            if (scheme_done && pram_chip_apply_success && ~error_flag)
                 next_state = S_APPLY_MEM;
-            else if ((scheme_done && i_pram_chip_apply_fail) || error_flag)
+            else if ((scheme_done && pram_chip_apply_fail) || error_flag)
                 next_state = S_LOAD;
             else
                 next_state = S_APPLY_CHIP;
@@ -175,9 +180,9 @@ always @(*) begin
             else
                 next_state = S_ARBI_SHARE;
         S_APPLY_MEM:
-            if (i_pram_apply_mem_done)
+            if (pram_apply_mem_done)
                 next_state = S_DONE;
-            else if (i_pram_apply_mem_refuse)
+            else if (pram_apply_mem_refuse)
                 next_state = S_LOAD; 
             else
                 next_state = S_APPLY_MEM;
@@ -188,7 +193,7 @@ always @(*) begin
     endcase
 end
 
-assign o_mem_malloc_clk = i_mem_malloc_clk;                 // explore the clk port to pram_ctor
+// assign o_mem_malloc_clk = i_mem_malloc_clk;                 // explore the clk port to pram_ctor
 assign priority_set = PRIORITY_PRAM_NUM;
 
 // port_belong_pram 
@@ -197,7 +202,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
         port_belong_pram <= 32'b0;
     else if (next_state == S_LOAD)
         port_belong_pram[PORT_NUM] <= 1'b1;                                    // 保证域端口号相对应的pram始终存在于该端口域下
-    else if (state == S_APPLY_CHIP && i_pram_chip_apply_success && ~i_pram_chip_apply_fail)
+    else if (state == S_APPLY_CHIP && pram_chip_apply_success && ~pram_chip_apply_fail)
         port_belong_pram[pram_chip_port_num] <= 1'b1;
     else
         port_belong_pram <= port_belong_pram;
@@ -3453,6 +3458,17 @@ always @(i_clk or i_rst_n) begin
     end
 end
 
+always @(pram_chip_port_num or i_rst_n) begin
+    if (~i_rst_n) begin 
+        pram_chip_apply_fail = 'd0;
+        pram_chip_apply_success = 'd0;
+    end
+    else begin 
+        pram_chip_apply_fail = i_pram_chip_apply_fail[pram_chip_port_num];
+        pram_chip_apply_success = i_pram_chip_apply_success[pram_chip_port_num];
+    end
+end
+
 // 外部空间计算
 always @(i_clk or i_rst_n) begin 
     if (~i_rst_n) begin 
@@ -6169,23 +6185,46 @@ end
 
 /* 申请策略仲裁：单存储、共享 */
 // arbi_res、arbi_pram_num
-always @(posedge i_clk or negedge i_rst_n) begin 
+always @(posedge i_clk or negedge i_rst_n) begin : chip_apply_arbi
+    integer a;
     if (~i_rst_n) begin 
         arbi_res <= 12'd0;
         error_flag <= 1'b0;
+        o_pram_chip_apply_req <= 'd0;
+        // o_pram_chip_port_num <= 'd0;
+        pram_chip_apply_fail <= 'd0;
+        pram_chip_apply_success <= 'd0;
     end
     else if (next_state == S_ABRI_ALONE) begin 
         arbi_res <= {inner_arbi_res, mem_apply_num_reg};
         scheme_done <= 1'b1;
         error_flag <= 1'b0;
         o_pram_chip_apply_req <= 'd0;
-        o_pram_chip_port_num <= 'd0;
+        // o_pram_chip_port_num <= 'd0;
     end
     else if (next_state == S_APPLY_CHIP) begin 
-        case ({i_pram_chip_apply_success, i_pram_chip_apply_fail})
-            2'b00: begin 
-                o_pram_chip_apply_req <= 1'b1;
-                o_pram_chip_port_num <= pram_chip_port_num;
+        // if ((!i_pram_chip_apply_fail) && (!i_pram_chip_apply_success)) begin 
+        //     for (a = 0; a < 32; a = a + 1) begin 
+        //         if (pram_chip_port_num == a) begin
+        //             o_pram_chip_apply_req[pram_chip_port_num] <= 1'b1;
+        //         end
+        //         else begin 
+        //             o_pram_chip_apply_req[pram_chip_port_num] <= 1'b0;
+        //         end
+        //     end
+        //     o_pram_chip_port_num <= pram_chip_port_num;
+        // end
+        case ({pram_chip_apply_success, pram_chip_apply_fail})
+            2'b00: begin
+                for (a = 0; a < 32; a = a + 1) begin 
+                    if (pram_chip_port_num == a) begin
+                        o_pram_chip_apply_req[pram_chip_port_num] <= 1'b1;
+                    end
+                    else begin 
+                        o_pram_chip_apply_req[pram_chip_port_num] <= 1'b0;
+                    end
+                end
+                // o_pram_chip_port_num <= pram_chip_port_num;
             end
             2'b01: begin 
                 scheme_done <= 1'b1;
@@ -6205,21 +6244,21 @@ always @(posedge i_clk or negedge i_rst_n) begin
     end
     else if (next_state == S_ARBI_SHARE) begin 
         o_pram_chip_apply_req <= 'd0;
-        o_pram_chip_port_num <= 'd0;
+        // o_pram_chip_port_num <= 'd0;
         arbi_res <= {outer_arbi_res, mem_apply_num_reg};
         scheme_done <= 1'b1;
         error_flag <= 1'b0;
     end
     else if(next_state == S_DONE)begin 
         o_pram_chip_apply_req <= 'd0;
-        o_pram_chip_port_num <= 'd0;
+        // o_pram_chip_port_num <= 'd0;
         error_flag <= 1'b0;
         arbi_res <= 13'b0;
         scheme_done <= 1'b0;
     end
     else begin 
         o_pram_chip_apply_req <= 'd0;
-        o_pram_chip_port_num <= 'd0;
+        // o_pram_chip_port_num <= 'd0;
         error_flag <= 1'b0;
         arbi_res <= arbi_res;
         scheme_done <= 1'b0;
@@ -6230,35 +6269,54 @@ end
 // assign o_mem_vt_addr = i_mem_vt_addr;
 // assign o_data_vld = i_data_vld;
 
-always @(posedge i_clk or negedge i_rst_n) begin
-    if (~i_rst_n) begin 
-        o_mem_vt_addr <= 'd0;
-        o_data_vld <= 'd0;
-    end
-    else if (next_state == S_APPLY_MEM && ~i_pram_apply_mem_done) begin 
-        o_mem_vt_addr <= i_mem_vt_addr[arbi_res[11:7]*`VT_ADDR_WIDTH+:`VT_ADDR_WIDTH];
-        o_data_vld <= i_data_vld[arbi_res[11:7]];
+always @(arbi_res or i_rst_n or i_clk) begin
+    if (!i_rst_n) begin 
+        pram_apply_mem_done = 'd0;
+        pram_apply_mem_refuse = 'd0;
+        o_mem_vt_addr = 'd0;
+        o_data_vld = 'd0;
+        o_pram_mem_apply_num = 'd0;
+        o_mem_malloc_clk = 'd0;
     end
     else begin 
-        o_mem_vt_addr <= 'd0;
-        o_data_vld <= 'd0;
+        pram_apply_mem_done = i_pram_apply_mem_done[arbi_res[11:7]];
+        pram_apply_mem_refuse = i_pram_apply_mem_refuse[arbi_res[11:7]];
+        o_mem_vt_addr = i_mem_vt_addr[arbi_res[11:7]*`VT_ADDR_WIDTH+:`VT_ADDR_WIDTH];
+        o_data_vld = i_data_vld[arbi_res[11:7]];
+        o_pram_mem_apply_num[arbi_res[11:7]*`DATA_FRAME_NUM_WIDTH+:`DATA_FRAME_NUM_WIDTH] = arbi_res[6:0];
+        o_mem_malloc_clk = i_mem_malloc_clk[arbi_res[11:7]];
     end
 end
 
+// always @(posedge i_clk or negedge i_rst_n) begin
+//     if (~i_rst_n) begin 
+//         o_mem_vt_addr <= 'd0;
+//         o_data_vld <= 'd0;
+//     end
+//     else if (next_state == S_APPLY_MEM && ~pram_apply_mem_done) begin 
+//         o_mem_vt_addr <= i_mem_vt_addr[arbi_res[11:7]*`VT_ADDR_WIDTH+:`VT_ADDR_WIDTH];
+//         o_data_vld <= i_data_vld[arbi_res[11:7]];
+//     end
+//     else begin 
+//         o_mem_vt_addr <= 'd0;
+//         o_data_vld <= 'd0;
+//     end
+// end
+
 always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
-        o_pram_mem_apply_num <= 'd0;
-        o_pram_mem_apply_port_num <= 'd0;
+        // o_pram_mem_apply_num <= 'd0;
+        // o_pram_mem_apply_port_num <= 'd0;
         o_pram_mem_apply_req <= 'd0;
     end
-    else if (next_state == S_APPLY_MEM && ~i_pram_apply_mem_done) begin 
-        o_pram_mem_apply_num[arbi_res[11:7]*`DATA_FRAME_NUM_WIDTH+:`DATA_FRAME_NUM_WIDTH] <= arbi_res[6:0];
-        o_pram_mem_apply_port_num[arbi_res[11:7]*`PRAM_NUM_WIDTH+:`PRAM_NUM_WIDTH] <= arbi_res[11:7];
+    else if (next_state == S_APPLY_MEM && ~pram_apply_mem_done) begin 
+        // o_pram_mem_apply_num[arbi_res[11:7]*`DATA_FRAME_NUM_WIDTH+:`DATA_FRAME_NUM_WIDTH] <= arbi_res[6:0];
+        // o_pram_mem_apply_port_num[arbi_res[11:7]*`PRAM_NUM_WIDTH+:`PRAM_NUM_WIDTH] <= arbi_res[11:7];
         o_pram_mem_apply_req[arbi_res[11:7]] <= 1'b1;
     end
     else begin 
-        o_pram_mem_apply_num <= 'd0;
-        o_pram_mem_apply_port_num <= 'd0;
+        // o_pram_mem_apply_num <= 'd0;
+        // o_pram_mem_apply_port_num <= 'd0;
         o_pram_mem_apply_req <= 'd0;
     end
 end
