@@ -29,17 +29,17 @@ module Port_SGDMA #(
     parameter port=0 //指定这个是哪个端口，用于初始化数据
 ) (
     input                           i_clk,
-    input                           i_rst_n,
-    output                          o_rd_en,
-    input     [`DATA_DWIDTH-1:0]    i_dat,
-    input                           i_empty,
+    input                           i_rst_n,       
+    output                          o_rd_en,       //读取使能
+    input     [`DATA_DWIDTH-1:0]    i_dat,         //读取到的数据
+    input                           i_empty,       //读port_input_fifo空信号
     input                           i_sop, //TODO:sop和eop需要和fifo读出同步,和rd_en&
     input                           i_eop, //这个需不需要？
 
     /*crossbar interface*/
-    output    [`DISPATCH_WIDTH-1:0] o_cb_din,
-    output                          o_cb_wr_en,
-    input                           i_cb_full,     
+    output    [`DISPATCH_WIDTH-1:0] o_cb_din,      //写入crossbar数据
+    output                          o_cb_wr_en,    //crossbar写使能
+    input                           i_cb_full,     //crossbar写满信号
 
     // output    [`DISPATCH_WIDTH-1:0] o_cb12_din,
     // output                          o_cb12_wr_en,
@@ -54,22 +54,22 @@ module Port_SGDMA #(
     // input                           i_cb14_full,    
 
     /*mmu interface*/
-    output                          o_mmu_wr_req,
-    output                          o_mmu_wr_en,
-    output    [`ADDR_WIDTH-1:0]     o_mmu_wr_addr,
-    output    [`DATA_DWIDTH-1:0]    o_mmu_wr_dat,
-    output                          o_mmu_wr_done, 
-    input                           i_mmu_wr_ready, 
+    output                          o_mmu_wr_req,   //mmu存储请求
+    output                          o_mmu_wr_en,    //sram写使能
+    output    [`ADDR_WIDTH-1:0]     o_mmu_wr_addr,  //存储请求地址
+    output    [`DATA_DWIDTH-1:0]    o_mmu_wr_dat,   //存储数据
+    output                          o_mmu_wr_done,  //存储完成标志位
+    input                           i_mmu_wr_ready, //写请求响应
 
     /*freelist interface*/
-    input                           i_fp_wr_en,
-    input     [`ADDR_WIDTH-1:0]     i_fp_wr_dat,
-    input                           i_aply_valid, //响应
+    input                           i_fp_wr_en,     //空闲地址队列写使能
+    input     [`ADDR_WIDTH-1:0]     i_fp_wr_dat,    //空闲地址队列写数据
+    input                           i_aply_valid,   //填充请求响应信号
     //output                          o_fp_list_full,
-    output                          o_aply_req, //申请填充freelist
-    output    [6:0]                 o_length,
+    output                          o_aply_req,     //申请填充freelist
+    output    [6:0]                 o_length,       //申请空闲地址长度
 
-    input                           locked 
+    input                           locked          //125MHz时钟使能信号
 );
 
 reg [3:0] state;
@@ -145,10 +145,10 @@ assign o_length = length;
 assign o_rd_en = (i_empty|fp_list_empty) ? 1'b0 : fifo_rd_en;
 
 //TODO 补充注释以及完善写mmu，应该先读fp_ptr_dout，判断是否为同一个片区，如果跨片需要重新申请，否则连续写入MMU
-/*                    控制读取MMU包数据并写入fifo状态机 
-**  |----------------------------interface------------------------------| 
-**  |  mmu_rd_req  |  mmu_rd_ready  |  mmu_rd_aply_dat  |  mmu_rd_done  |
-**  |     读请求    |     读响应     |  包存储首地址和长度 | 整个包读取完成 |
+/*                                            包数据解析及数据调度状态机 
+**  |-------------------------------------------mmu write interface----------------------------------------------| 
+**  |  mmu_wr_req   |    mmu_wr_ready   |    mmu_wr_addr   |    mmu_wr_en   |  mmu_wr_dat  |     mmu_wr_done     |
+**  |    请求存储    |     写请求响应     |    请求存储地址   |   sram写使能   |    包数据     |  mmu存储完成标志位   |
 */
 /*状态机实现功能：cnt包信元计数√、包与包之间的衔接√、发送长度√、crossbar发送、边界情况（如果fifo空或者满，状态如何跳转）*/
 always @(posedge i_clk or negedge i_rst_n) begin
