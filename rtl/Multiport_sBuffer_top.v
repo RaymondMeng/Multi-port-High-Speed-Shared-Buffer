@@ -311,6 +311,8 @@ wire [`PORT_NUM-1:0] port_almost_full ;
 wire [`PORT_NUM-1:0] port_wr_sop ;
 wire [`PORT_NUM-1:0] port_wr_eop ;
 wire [`PORT_NUM-1:0] port_rd_ready;
+wire [`PORT_NUM-1:0] port_rd_sop, port_rd_eop, port_rd_vld;
+
 // wire [`DATA_WIDTH-1:0] sdata;
 // wire sdat_valid;
 //wire [7:0] p1_dat_count, p2_dat_count, p3_dat_count, p4_dat_count;
@@ -352,6 +354,14 @@ wire [`PORT_NUM-1:0] mmu_wr_ready ;
 wire [`PORT_NUM-1:0] mmu_wr_en ;
 wire [`ADDR_WIDTH-1:0] mmu_wr_addr [`PORT_NUM-1:0];
 wire [`DATA_DWIDTH-1:0] mmu_wr_dat [`PORT_NUM-1:0];
+ 
+//mmu read interface
+wire [`PORT_NUM-1:0] mmu_rd_clk; //读取mmu输出接口
+wire [`DATA_DWIDTH-1:0] mmu_rd_dout [`PORT_NUM-1:0]; //读取mmu输出接口
+wire [`PORT_NUM-1:0] opt_fifo_wr_en; //mmu输出写入fifo
+reg [`PORT_NUM-1:0] opt_fifo_rd_en, opt_fifo_rd_en_r; //读取fifo输出端口
+wire [`DATA_WIDTH-1:0] opt_fifo_rd_dout [`PORT_NUM-1:0];
+wire [`PORT_NUM-1:0] opt_fifo_empty;
 
 //freelist interface 
 // wire fp_p1_wr_en, fp_p2_wr_en, fp_p3_wr_en, fp_p4_wr_en;
@@ -371,6 +381,8 @@ wire [`PORT_NUM-1:0] mmu_rd_done;
 reg [`PORT_NUM-1:0] ooqc_rd_en;
 wire [`DISPATCH_WIDTH-1:0] ooqc_rd_dout [`PORT_NUM-1:0];
 wire [`PORT_NUM-1:0] ooqc_rd_empty;
+
+reg [2:0] rd_mem_state [`PORT_NUM-1:0];
 
 MMCM_CLK_125MHz MMCM_CLK_125MHz_inst
    (
@@ -468,6 +480,73 @@ assign port_rd_ready[13] = p14_rd_ready;
 assign port_rd_ready[14] = p15_rd_ready;
 assign port_rd_ready[15] = p16_rd_ready;
 
+assign p1_rd_vld  = port_rd_vld[0];
+assign p2_rd_vld  = port_rd_vld[1];
+assign p3_rd_vld  = port_rd_vld[2];
+assign p4_rd_vld  = port_rd_vld[3];
+assign p5_rd_vld  = port_rd_vld[4];
+assign p6_rd_vld  = port_rd_vld[5];
+assign p7_rd_vld  = port_rd_vld[6];
+assign p8_rd_vld  = port_rd_vld[7];
+assign p9_rd_vld  = port_rd_vld[8];
+assign p10_rd_vld = port_rd_vld[9];
+assign p11_rd_vld = port_rd_vld[10];
+assign p12_rd_vld = port_rd_vld[11];
+assign p13_rd_vld = port_rd_vld[12];
+assign p14_rd_vld = port_rd_vld[13];
+assign p15_rd_vld = port_rd_vld[14];
+assign p16_rd_vld = port_rd_vld[15];
+
+assign p1_rd_sop  = port_rd_sop[0];
+assign p2_rd_sop  = port_rd_sop[1];
+assign p3_rd_sop  = port_rd_sop[2];
+assign p4_rd_sop  = port_rd_sop[3];
+assign p5_rd_sop  = port_rd_sop[4];
+assign p6_rd_sop  = port_rd_sop[5];
+assign p7_rd_sop  = port_rd_sop[6];
+assign p8_rd_sop  = port_rd_sop[7];
+assign p9_rd_sop  = port_rd_sop[8];
+assign p10_rd_sop = port_rd_sop[9];
+assign p11_rd_sop = port_rd_sop[10];
+assign p12_rd_sop = port_rd_sop[11];
+assign p13_rd_sop = port_rd_sop[12];
+assign p14_rd_sop = port_rd_sop[13];
+assign p15_rd_sop = port_rd_sop[14];
+assign p16_rd_sop = port_rd_sop[15];
+
+assign p1_rd_eop  = port_rd_eop[0];
+assign p2_rd_eop  = port_rd_eop[1];
+assign p3_rd_eop  = port_rd_eop[2];
+assign p4_rd_eop  = port_rd_eop[3];
+assign p5_rd_eop  = port_rd_eop[4];
+assign p6_rd_eop  = port_rd_eop[5];
+assign p7_rd_eop  = port_rd_eop[6];
+assign p8_rd_eop  = port_rd_eop[7];
+assign p9_rd_eop  = port_rd_eop[8];
+assign p10_rd_eop = port_rd_eop[9];
+assign p11_rd_eop = port_rd_eop[10];
+assign p12_rd_eop = port_rd_eop[11];
+assign p13_rd_eop = port_rd_eop[12];
+assign p14_rd_eop = port_rd_eop[13];
+assign p15_rd_eop = port_rd_eop[14];
+assign p16_rd_eop = port_rd_eop[15];
+
+assign p1_rd_data  = opt_fifo_rd_dout[0];
+assign p2_rd_data  = opt_fifo_rd_dout[1];
+assign p3_rd_data  = opt_fifo_rd_dout[2];
+assign p4_rd_data  = opt_fifo_rd_dout[3];
+assign p5_rd_data  = opt_fifo_rd_dout[4];
+assign p6_rd_data  = opt_fifo_rd_dout[5];
+assign p7_rd_data  = opt_fifo_rd_dout[6];
+assign p8_rd_data  = opt_fifo_rd_dout[7];
+assign p9_rd_data  = opt_fifo_rd_dout[8];
+assign p10_rd_data = opt_fifo_rd_dout[9];
+assign p11_rd_data = opt_fifo_rd_dout[10];
+assign p12_rd_data = opt_fifo_rd_dout[11];
+assign p13_rd_data = opt_fifo_rd_dout[12];
+assign p14_rd_data = opt_fifo_rd_dout[13];
+assign p15_rd_data = opt_fifo_rd_dout[14];
+assign p16_rd_data = opt_fifo_rd_dout[15];
 
 /*      端口输入fifo 
 **  Descrip: 端口输入数据后缓存
@@ -706,13 +785,14 @@ port_input_fifo port16_input_inst (
     //   .o_fp_list_full                (fp_p1_list_full),
     //   .locked                        (locked)
     // );
-wire aply_req;
-wire [6:0] length;
-wire aply_valid;
+wire [`PORT_NUM-1:0] aply_req;
+wire [6:0] length [`PORT_NUM-1:0];
+wire [`PORT_NUM-1:0] aply_valid;
+wire [`PRAM_NUM_WIDTH-1:0] sram_sel [`PORT_NUM-1:0];
 
 genvar j;
 generate 
-  for (j = 0; j < 16; j = j+1) begin : Port_SGDMA1
+  for (j = 0; j < 16; j = j+1) begin : Port_SGDMA_modules
     Port_SGDMA #(.port(j)) Port_SGDMA_inst(
       .i_clk                         (clk_125MHz),
       .i_rst_n                       (rst_n),
@@ -727,6 +807,7 @@ generate
       .i_cb_full                     (sf_full[j]),
       /*mmu interface*/
       .o_mmu_wr_req                  (mmu_wr_req[j]),
+      .o_sram_sel                    (sram_sel[j]),
       .o_mmu_wr_en                   (mmu_wr_en[j]),
       .o_mmu_wr_addr                 (mmu_wr_addr[j]),
       .o_mmu_wr_dat                  (mmu_wr_dat[j]),
@@ -735,61 +816,213 @@ generate
       /*freelist interface*/
       .i_fp_wr_en                    (fp_wr_en[j]),
       .i_fp_wr_dat                   (fp_wr_dat[j]),
-      .i_aply_valid                  (aply_valid),
-      .o_aply_req                    (aply_req),
-      .o_length                      (length),
+      .i_aply_valid                  (aply_valid[j]),
+      .o_aply_req                    (aply_req[j]),
+      .o_length                      (length[j]),
       //.o_fp_list_full                (fp_list_full[j]),
       .locked                        (locked)
     );
   end
 endgenerate
 
-// wr_convert_port2sram wr_convert_port2sram_inst(
-//     .i_clk                        (clk_125MHz),
-//     .i_wr_req                     (mmu_wr_req[0]),
-//     .i_wr_en                      (mmu_wr_en[0]),
-//     .i_wr_vt_addr                 (mmu_wr_addr[0]),
-//     .i_wr_data                    (mmu_wr_dat[0]),
-//     .i_wr_done                    (mmu_wr_done[0])
-//     // .o_wr_req                     (),
-//     // .o_wr_en                      (),
-//     // .o_wr_phy_addr                (),
-//     // .o_wr_data                    (),
-//     // .o_wr_done                    ()
+
+
+// MMU_top MMU_top_inst(
+//     .i_clk               (clk),
+//     .i_clk_125MHz        (clk_125MHz),
+//     .i_rst_n             (rst_n),
+
+//     // .i_mem_req           (mmu_wr_req[0]),
+//     // .i_mem_apply_num     (),
+
+//     // .o_data_vld          (),
+//     // .o_mem_vt_addr       (),
+//     // .o_malloc_clk        (),
+
+//     .i_wr_apply_sig      ({16{mmu_wr_req[0]}}),
+//     .i_wr_vt_addr        ({16{mmu_wr_addr[0]}}),             
+//     .i_wr_data           ({16{mmu_wr_dat[0]}}),                 
+//     .i_wea               ({16{mmu_wr_en[0]}}),                     
+//     .i_write_done        ({16{mmu_wr_done[0]}}) 
 // );
 
 MMU_top MMU_top_inst(
-    .i_clk               (clk),
-    .i_clk_125MHz        (clk_125MHz),
-    .i_rst_n             (rst_n),
+    .i_clk                 (clk),
+    .i_rst_n               (rst_n),
 
-    // .i_mem_req           (mmu_wr_req[0]),
-    // .i_mem_apply_num     (),
+    .i_mem_req             (aply_req),
 
-    // .o_data_vld          (),
-    // .o_mem_vt_addr       (),
-    // .o_malloc_clk        (),
+    .i_mem_apply_num       ({length[15], 
+                             length[14], 
+                             length[13], 
+                             length[12], 
+                             length[11], 
+                             length[10], 
+                             length[9], 
+                             length[8], 
+                             length[7], 
+                             length[6], 
+                             length[5], 
+                             length[4], 
+                             length[3], 
+                             length[2], 
+                             length[1], 
+                             length[0]}),
 
-    .i_wr_apply_sig      ({16{mmu_wr_req[0]}}),
-    .i_wr_vt_addr        ({16{mmu_wr_addr[0]}}),             
-    .i_wr_data           ({16{mmu_wr_dat[0]}}),                 
-    .i_wea               ({16{mmu_wr_en[0]}}),                     
-    .i_write_done        ({16{mmu_wr_done[0]}}) 
+    .o_data_vld            (fp_wr_en),
+
+    .o_mem_vt_addr         ({fp_wr_dat[15], 
+                             fp_wr_dat[14], 
+                             fp_wr_dat[13], 
+                             fp_wr_dat[12], 
+                             fp_wr_dat[11], 
+                             fp_wr_dat[10], 
+                             fp_wr_dat[9], 
+                             fp_wr_dat[8], 
+                             fp_wr_dat[7], 
+                             fp_wr_dat[6], 
+                             fp_wr_dat[5], 
+                             fp_wr_dat[4], 
+                             fp_wr_dat[3], 
+                             fp_wr_dat[2], 
+                             fp_wr_dat[1], 
+                             fp_wr_dat[0]}),
+
+    //.o_malloc_clk          (), //？会不会有反相问题
+
+    .i_wr_clk              ({16{clk_125MHz}}),  
+
+    .i_wr_port_sel         ({sram_sel[15], 
+                             sram_sel[14], 
+                             sram_sel[13], 
+                             sram_sel[12], 
+                             sram_sel[11], 
+                             sram_sel[10], 
+                             sram_sel[9], 
+                             sram_sel[8], 
+                             sram_sel[7], 
+                             sram_sel[6], 
+                             sram_sel[5], 
+                             sram_sel[4], 
+                             sram_sel[3], 
+                             sram_sel[2], 
+                             sram_sel[1], 
+                             sram_sel[0]}),
+
+    .i_wr_apply_sig        (mmu_wr_req),
+
+    .i_wr_vt_addr          ({mmu_wr_addr[15], 
+                             mmu_wr_addr[14], 
+                             mmu_wr_addr[13], 
+                             mmu_wr_addr[12], 
+                             mmu_wr_addr[11], 
+                             mmu_wr_addr[10], 
+                             mmu_wr_addr[9], 
+                             mmu_wr_addr[8], 
+                             mmu_wr_addr[7], 
+                             mmu_wr_addr[6], 
+                             mmu_wr_addr[5], 
+                             mmu_wr_addr[4], 
+                             mmu_wr_addr[3], 
+                             mmu_wr_addr[2], 
+                             mmu_wr_addr[1], 
+                             mmu_wr_addr[0]}), 
+
+    .i_wr_data             ({mmu_wr_dat[15], 
+                             mmu_wr_dat[14], 
+                             mmu_wr_dat[13], 
+                             mmu_wr_dat[12], 
+                             mmu_wr_dat[11], 
+                             mmu_wr_dat[10], 
+                             mmu_wr_dat[9], 
+                             mmu_wr_dat[8], 
+                             mmu_wr_dat[7], 
+                             mmu_wr_dat[6], 
+                             mmu_wr_dat[5], 
+                             mmu_wr_dat[4], 
+                             mmu_wr_dat[3], 
+                             mmu_wr_dat[2], 
+                             mmu_wr_dat[1], 
+                             mmu_wr_dat[0]}),  
+
+    .i_wea                 (mmu_wr_en),      
+
+    .i_write_done          (mmu_wr_done), 
+
+    .o_wr_ack              (mmu_wr_ready),
+
+    .i_rd_port_sel         ({mmu_rd_aply_dat[15][23:19], 
+                             mmu_rd_aply_dat[14][23:19], 
+                             mmu_rd_aply_dat[13][23:19], 
+                             mmu_rd_aply_dat[12][23:19], 
+                             mmu_rd_aply_dat[11][23:19], 
+                             mmu_rd_aply_dat[10][23:19], 
+                             mmu_rd_aply_dat[9][23:19], 
+                             mmu_rd_aply_dat[8][23:19], 
+                             mmu_rd_aply_dat[7][23:19], 
+                             mmu_rd_aply_dat[6][23:19], 
+                             mmu_rd_aply_dat[5][23:19], 
+                             mmu_rd_aply_dat[4][23:19], 
+                             mmu_rd_aply_dat[3][23:19], 
+                             mmu_rd_aply_dat[2][23:19], 
+                             mmu_rd_aply_dat[1][23:19], 
+                             mmu_rd_aply_dat[0][23:19]}),
+                             
+    .i_read_apply          (mmu_rd_req),
+    .o_read_ack            (mmu_rd_ready),
+
+    .i_pd                  ({mmu_rd_aply_dat[15], 
+                             mmu_rd_aply_dat[14], 
+                             mmu_rd_aply_dat[13], 
+                             mmu_rd_aply_dat[12], 
+                             mmu_rd_aply_dat[11], 
+                             mmu_rd_aply_dat[10], 
+                             mmu_rd_aply_dat[9], 
+                             mmu_rd_aply_dat[8], 
+                             mmu_rd_aply_dat[7], 
+                             mmu_rd_aply_dat[6], 
+                             mmu_rd_aply_dat[5], 
+                             mmu_rd_aply_dat[4], 
+                             mmu_rd_aply_dat[3], 
+                             mmu_rd_aply_dat[2], 
+                             mmu_rd_aply_dat[1], 
+                             mmu_rd_aply_dat[0]}),
+
+    .o_rd_done             (mmu_rd_done),
+
+    .o_rd_data             ({mmu_rd_dout[15], 
+                             mmu_rd_dout[14], 
+                             mmu_rd_dout[13], 
+                             mmu_rd_dout[12], 
+                             mmu_rd_dout[11], 
+                             mmu_rd_dout[10], 
+                             mmu_rd_dout[9], 
+                             mmu_rd_dout[8], 
+                             mmu_rd_dout[7], 
+                             mmu_rd_dout[6], 
+                             mmu_rd_dout[5], 
+                             mmu_rd_dout[4], 
+                             mmu_rd_dout[3], 
+                             mmu_rd_dout[2], 
+                             mmu_rd_dout[1], 
+                             mmu_rd_dout[0]}),
+    .o_read_clk            (mmu_rd_clk), //???
+    .o_read_data_vld       (opt_fifo_wr_en)
 );
 
-genvar i;
-generate
-  for (i = 0; i < 16; i = i+1) begin : ready_drive_test_1
-    ready_drive_test ready_drive_test_inst(
-      .i_clk                         (clk_125MHz),
-      .i_rst_n                       (rst_n),
-      .i_mmu_wr_req                  (mmu_wr_req[i]),
-      // .i_mmu_wr_addr                 (mmu_wr_addr[i]),
-      // .i_mmu_wr_dat                  (mmu_wr_dat[i]),
-      .o_mmu_wr_ready                (mmu_wr_ready[i])
-    );
-  end
-endgenerate
+// genvar i;
+// generate
+//   for (i = 0; i < 16; i = i+1) begin : ready_drive_test_1
+//     ready_drive_test ready_drive_test_inst(
+//       .i_clk                         (clk_125MHz),
+//       .i_rst_n                       (rst_n),
+//       .i_mmu_wr_req                  (mmu_wr_req[i]),
+//       // .i_mmu_wr_addr                 (mmu_wr_addr[i]),
+//       // .i_mmu_wr_dat                  (mmu_wr_dat[i]),
+//       .o_mmu_wr_ready                (mmu_wr_ready[i])
+//     );
+//   end
+// endgenerate
 
 genvar k;
 generate
@@ -872,32 +1105,32 @@ generate
       .i_cb_col_dat_valid              (cb_col_dat_valid[m])      ,
       //out of queue cache interface
       .i_ooqc1_rd_en                   (ooqc_rd_en[4*m])          ,
-      .o_ooqc1_rd_dat                  (ooqc_rd_dout[4*m])        , //数据包括首地址和长度
+      .o_ooqc1_rd_dat                  (ooqc_rd_dout[4*m])        , //32位完整调度数据
       .o_ooqc1_rd_empty                (ooqc_rd_empty[4*m])       ,
 
       .i_ooqc2_rd_en                   (ooqc_rd_en[4*m+1])        ,
-      .o_ooqc2_rd_dat                  (ooqc_rd_dout[4*m+1])      , //数据包括首地址和长度
+      .o_ooqc2_rd_dat                  (ooqc_rd_dout[4*m+1])      , //32位完整调度数据
       .o_ooqc2_rd_empty                (ooqc_rd_empty[4*m+1])     ,
 
       .i_ooqc3_rd_en                   (ooqc_rd_en[4*m+2])        ,
-      .o_ooqc3_rd_dat                  (ooqc_rd_dout[4*m+2])      , //数据包括首地址和长度
+      .o_ooqc3_rd_dat                  (ooqc_rd_dout[4*m+2])      , //32位完整调度数据
       .o_ooqc3_rd_empty                (ooqc_rd_empty[4*m+2])     ,
 
       .i_ooqc4_rd_en                   (ooqc_rd_en[4*m+3])        ,
-      .o_ooqc4_rd_dat                  (ooqc_rd_dout[4*m+3])      , //数据包括首地址和长度
+      .o_ooqc4_rd_dat                  (ooqc_rd_dout[4*m+3])      , //32位完整调度数据
       .o_ooqc4_rd_empty                (ooqc_rd_empty[4*m+3])
     );
   end
 endgenerate
 
-reg [2:0] rd_mem_state [`PORT_NUM-1:0];
 
-genvar l;
-generate
-  for (l = 0; l < `PORT_NUM; l = l+1) begin                 //16       7
-    assign mmu_rd_aply_dat[l] = ooqc_rd_dout[l][29:7]; //initial_addr length
-  end
-endgenerate
+
+// genvar l;
+// generate
+//   for (l = 0; l < `PORT_NUM; l = l+1) begin                 //16       7
+//     assign mmu_rd_aply_dat[l] = ooqc_rd_dout[l][29:7]; //initial_addr length
+//   end
+// endgenerate
 //需要循环例化16遍
 /*                    状态机控制读取MMU包数据并写入fifo 
 **  |----------------------------interface------------------------------| 
@@ -907,6 +1140,9 @@ endgenerate
 genvar n;
 generate
   for (n = 0; n < `PORT_NUM; n = n + 1) begin
+                                                            //16       7
+    assign mmu_rd_aply_dat[n] = ooqc_rd_dout[n][29:7]; //initial_addr length
+
     always @(posedge clk_125MHz or negedge rst_n) begin
       if (rst_n == 1'b0) begin
         rd_mem_state[n] <= 'd0;
@@ -919,25 +1155,46 @@ generate
         mmu_rd_req[n] <= 1'b0;
         case (rd_mem_state[n])
           'd0: begin
-            rd_mem_state[n] <= port_rd_ready[n] ? 1'b1 : 1'b0;
-            ooqc_rd_en[n] <= port_rd_ready[n] ? 1'b1 : 1'b0;
+            // rd_mem_state[n] <= (port_rd_ready[n] == 1'b1) ? 'd1 : 'd0;
+            if (port_rd_ready[n] == 1'b1) begin //考虑x的情况
+              rd_mem_state[n] <= 'd1;
+            end
+            else begin
+              rd_mem_state[n] <= 'd0;
+            end
+            // ooqc_rd_en[n] <= port_rd_ready[n] ? 1'b1 : 1'b0;
           end //ooqc读使能 拉低读使能 
           'd1: begin
-            rd_mem_state[n] <= 'd2;
+            if (ooqc_rd_empty[n]==1'b0) begin //考虑x的情况
+              rd_mem_state[n] <= 'd2;
+              ooqc_rd_en[n] <= 1'b1;
+            end
+            else begin
+              rd_mem_state[n] <= 'd1;
+              ooqc_rd_en[n] <= 1'b0;
+            end
+            // ooqc_rd_en[n] <= (ooqc_rd_empty[n]==1'b0) ? 1'b1 : 1'b0;
+            // rd_mem_state[n] <= (ooqc_rd_empty[n]==1'b0) ? 'd2 : 'd1;
+          end
+          'd2: begin
+            rd_mem_state[n] <= 'd3;
             mmu_rd_req[n] <= 1'b1;
           end
-          'd2: begin //ooqc出数据  开始申请读mmu的包数据
+          'd3: begin
+            rd_mem_state[n] <= 'd4;
+          end
+          'd4: begin //ooqc出数据  开始申请读mmu的包数据
             if (~mmu_rd_ready[n]) begin//未响应
               mmu_rd_req[n] <= 1'b1;
-              rd_mem_state[n] <= 'd2; //一直申请
+              rd_mem_state[n] <= 'd3; //一直申请
             end
             else begin //响应成功
               mmu_rd_req[n] <= 1'b0; //取消申请
-              rd_mem_state[n] <= 'd3; //进入正式读取阶段
+              rd_mem_state[n] <= 'd5; //进入正式读取阶段
             end
           end
-          'd3: begin //等待mmu全部读取完包数据并写入fifo中
-            rd_mem_state[n] <= mmu_rd_done[n] ? 'd0 : 'd3;
+          'd5: begin //等待mmu全部读取完包数据并写入fifo中
+            rd_mem_state[n] <= mmu_rd_done[n] ? 'd1 : 'd5;
           end
         endcase
       end
@@ -945,12 +1202,8 @@ generate
   end
 endgenerate
 
-
-wire mmu_rd_clk; //读取mmu输出接口
-wire [`DATA_DWIDTH-1:0] mmu_rd_dout [`PORT_NUM-1:0]; //读取mmu输出接口
-wire [`PORT_NUM-1:0] opt_fifo_wr_en, opt_fifo_rd_en; //读取mmu输出接口
-wire [`DATA_WIDTH-1:0] opt_fifo_rd_dout [`PORT_NUM-1:0];
-wire [`PORT_NUM-1:0] opt_fifo_empty;
+wire [`PORT_NUM-1:0] opt_rd_clk, opt_wr_clk;
+reg clk_en;
 
 
 /*      端口输出fifo 
@@ -963,20 +1216,40 @@ genvar o;
 //需要循环例化16遍
 generate
   for (o = 0; o < `PORT_NUM; o = o + 1) begin
+
+    assign opt_wr_clk[o] = locked ? mmu_rd_clk[o] : clk;
     port_output_fifo port_output_fifo_inst (
-      .rst(~rst_n),                  // input wire rst
-      .wr_clk(mmu_rd_clk),            // input wire wr_clk 125MHz
-      .rd_clk(clk),            // input wire rd_clk         250MHz
-      .din(mmu_rd_dout[o]),                  // input wire [127 : 0] din
-      .wr_en(opt_fifo_wr_en[o]),              // input wire wr_en
-      .rd_en(opt_fifo_rd_en[o]),              // input wire rd_en
-      .dout(opt_fifo_rd_dout[o]),                // output wire [63 : 0] dout
-      .empty(opt_fifo_empty[o])              // output wire empty
+      .rst(~rst_n),                      // input wire rst
+      .wr_clk(opt_wr_clk[o]),            // input wire wr_clk 125MHz
+      .rd_clk(clk),                      // input wire rd_clk         250MHz
+      .din(mmu_rd_dout[o]),              // input wire [127 : 0] din
+      .wr_en(opt_fifo_wr_en[o]),         // input wire wr_en
+      .rd_en(opt_fifo_rd_en[o]),         // input wire rd_en
+      .dout(opt_fifo_rd_dout[o]),        // output wire [63 : 0] dout
+      .empty(opt_fifo_empty[o])          // output wire empty
     );
   end
 endgenerate
 
-
-//TODO输出简单状态跳转， 主要用于SOP和EOP信号的生成，尽量简单
+//主要用于SOP和EOP信号的生成以及fifo数据输出
+genvar p;
+generate
+  for (p = 0; p < `PORT_NUM; p = p + 1) begin
+    always @(posedge clk or negedge rst_n) begin
+      if (~rst_n) begin
+        opt_fifo_rd_en[p] <= 1'b0;
+        opt_fifo_rd_en_r[p] <= 1'b0;
+      end
+      else begin
+        // opt_fifo_rd_en[p] <= opt_fifo_empty[p] ? 1'b0 : 1'b1;
+        opt_fifo_rd_en[p] <= opt_fifo_empty[p] ? 1'b0 : 1'b1;
+        opt_fifo_rd_en_r[p] <= opt_fifo_rd_en[p];
+      end
+    end
+    assign port_rd_sop[p] = opt_fifo_rd_en[p] & ~opt_fifo_rd_en_r[p]; //生成sop信号
+    assign port_rd_eop[p] = ~opt_fifo_rd_en[p] & opt_fifo_rd_en_r[p]; //生成eop信号
+    assign port_rd_vld[p] = opt_fifo_rd_en[p] & opt_fifo_rd_en_r[p]; //生成vld信号
+  end
+endgenerate
 
 endmodule

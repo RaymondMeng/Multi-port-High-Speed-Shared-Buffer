@@ -40,5 +40,5 @@
 `define PACKAGE_DESCRIPTION_WIDTH 32            
 
 // `define PACKET_SWITCH`
-`define WRR_STRATEGY 
-// `define SP_STRATEGY   //严格优先级策略 
+// `define WRR_STRATEGY 
+`define SP_STRATEGY   //严格优先级策略 

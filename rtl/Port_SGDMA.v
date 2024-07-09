@@ -55,6 +55,7 @@ module Port_SGDMA #(
 
     /*mmu interface*/
     output                          o_mmu_wr_req,   //mmu存储请求
+    output    [`PRAM_NUM_WIDTH-1:0] o_sram_sel,     //申请sram片区号
     output                          o_mmu_wr_en,    //sram写使能
     output    [`ADDR_WIDTH-1:0]     o_mmu_wr_addr,  //存储请求地址
     output    [`DATA_DWIDTH-1:0]    o_mmu_wr_dat,   //存储数据
@@ -126,6 +127,8 @@ assign o_mmu_wr_dat = mmu_wr_dat; //改，根据ready信号写
 assign o_mmu_wr_req = mmu_wr_req;
 assign mmu_wr_ready = i_mmu_wr_ready;
 assign o_mmu_wr_en = ~i_empty ? mmu_wr_en : 1'b0;
+
+assign o_sram_sel = port;
 
 
 //free pointer list defines
@@ -272,6 +275,140 @@ always @(posedge i_clk or negedge i_rst_n) begin
     end
 end
 
+// /*TODO: cnt包信元计数√、包与包之间的衔接√、crossbar发送、边界情况（如果fifo空或者满，状态如何跳转）*/
+// always @(posedge i_clk or negedge i_rst_n) begin
+//     if (!i_rst_n) begin
+//         /*初始化*/
+//         fifo_rd_en <= 1'b0;
+//         pack_head <= 'd0;
+//         //dest_port <= 'd0;
+//         //length <= 'd0;
+//         unit_cnt <= 'd0;
+//         state <= 'd1;
+//         cb_wr_en <= 1'b0;
+//         cb_din <= 'd0;
+//         //sel <= 'd0;
+//         fp_rd_en <= 1'b0;
+//         cnt_temp <= 'd0;
+//         first_unit_addr <= 'd0;
+//         mmu_wr_addr <= 'd0;
+//         mmu_wr_dat <= 'd0; //数据写入用组合
+//         mmu_wr_req <= 1'b0;
+//         unit_pre_1_dat <= 'd0;
+//         unit_pre_2_dat <= 'd0;
+//         fp_pre_1_dat <= 'd0;
+//         fp_pre_2_dat <= 'd0;
+//         mmu_wr_en <= 1'b0;
+//         mmu_wr_done <= 1'b0;
+//         // aply_req <= 1'b0;
+//     end
+//     else begin 
+//         if (fifo_rd_en) begin
+//             /*寄存三个周期数据*/
+//             unit_pre_1_dat <= i_dat; //第n-1个数据
+//             unit_pre_2_dat <= unit_pre_1_dat; //第n-2个数据
+//             /*寄存三周期地址*/
+//             fp_pre_1_dat <= free_ptr_dout; //写入指定地址（free_ptr_dout从free_list中取到）第n-1个数据
+//             fp_pre_2_dat <= fp_pre_1_dat; //第n-2个数据
+//         end
+//         else begin
+//             /*寄存三个周期数据*/
+//             unit_pre_1_dat <= unit_pre_1_dat; //第n-1个数据
+//             unit_pre_2_dat <= unit_pre_2_dat; //第n-2个数据
+//             //unit_pre_3_dat <= unit_pre_3_dat; //第n-3个数据
+//             /*寄存三周期地址*/
+//             fp_pre_1_dat <= fp_pre_1_dat; //写入指定地址（free_ptr_dout从free_list中取到）第n-1个数据
+//             fp_pre_2_dat <= fp_pre_2_dat; //第n-2个数据
+//         end
+//         cnt_temp <= cnt_temp;
+//         pack_head <= pack_head;
+//         first_unit_addr <= first_unit_addr;
+//         mmu_wr_req <= 1'b0;
+//         case (state)
+//             //开始读取输入fifo的数据
+//             'd1: begin
+//                 fifo_rd_en <= (i_empty|fp_list_empty) ? 1'b0 : 1'b1;
+//                 fp_rd_en <= (i_empty|fp_list_empty) ? 1'b0 : 1'b1; //读取freeptr
+//                 state <= (i_empty|fp_list_empty) ? 'd1 : 'd2;
+//             end
+//             'd2: begin
+//                 state <= 'd3;
+//                 /*读空闲指针链表*/
+//                 /*TODO:包长度给地址生成模块,用于填充freelist*/
+//             end
+//             'd3: begin //包头写入mmu
+//                 pack_head <= i_dat; //取到包头
+//                 //sel <= i_dat[3:0]; //目的端口号用于选择crossbar buffer
+//                 unit_cnt <= (i_dat[17:7] >> 3) + 1'b1; //包长度(可能不准确验证一下)
+//                 cnt_temp <= (i_dat[17:7] >> 3) + 1'b1; //注意符号优先级
+//                 first_unit_addr <= free_ptr_dout;
+//                 //mmu write
+//                 mmu_wr_dat <= i_dat; //写入数据
+//                 mmu_wr_addr <= free_ptr_dout; //写入地址
+//                 mmu_wr_req <= 1'b1; //写入请求
+//                 state <= 'd4;
+//             end
+//             'd4: begin //写入mmu的第一个数据     
+//                 //停一拍等待ready回应
+//                 mmu_wr_dat <= i_dat; //写入数据
+//                 mmu_wr_req <= 1'b1; //写入请求
+//                 mmu_wr_addr <= free_ptr_dout; //写入地址
+//                 unit_cnt <= unit_cnt - 1'b1;
+//                 //crossbar write
+//                 cb_wr_en <= ~cb_full ? 1'b1 : 1'b0;
+//                 cb_din <= cb_dat; //此刻cb_dat已更新
+//                 state <= 'd5;
+//             end
+//             'd5: begin //判断mmu能不能写入
+//                 if (mmu_wr_ready) begin //上一个写入成功
+//                     fp_rd_en <= (unit_cnt < 'd3) ? 1'b0 : ((i_empty|fp_list_empty) ? 1'b0 : 1'b1); //小于4之后不再读取fifo，包同步之后，该包读取结束，下面同理
+//                     fifo_rd_en <= (unit_cnt < 'd3) ? 1'b0 : ((i_empty|fp_list_empty) ? 1'b0 : 1'b1);
+//                     //mmu write
+//                     mmu_wr_dat <= i_dat; //写入数据
+//                     mmu_wr_req <= ((unit_cnt == 'd0) || (i_empty|fp_list_empty)) ? 1'b0 : 1'b1; //写入请求 不能单靠cnt来完成req信号置位
+//                     mmu_wr_addr <= free_ptr_dout; //写入地址
+//                     unit_cnt <= unit_cnt - 1'b1;
+//                     state <= ((unit_cnt == 'd0) || (i_empty|fp_list_empty)) ? 'd1 : 'd5; //如果包存储完跳转到1
+//                 end
+//                 else begin //没写成功
+//                     //拉低使能
+//                     fp_rd_en <= 1'b0;
+//                     fifo_rd_en <= 1'b0;
+//                     //mmu write
+//                     mmu_wr_dat <= unit_pre_1_dat; //写入数据
+//                     mmu_wr_req <= 1'b1; //写入请求
+//                     mmu_wr_addr <= fp_pre_1_dat; //写入地址
+//                     unit_cnt <= unit_cnt;
+//                     state <= 'd6;
+//                 end
+//             end
+//             'd6: begin //mmu无法写入一直请求
+//                 if (mmu_wr_ready) begin
+//                     fp_rd_en <= (unit_cnt < 'd3) ? 1'b0 : ((i_empty|fp_list_empty) ? 1'b0 : 1'b1);
+//                     fifo_rd_en <= (unit_cnt < 'd3) ? 1'b0 : ((i_empty|fp_list_empty) ? 1'b0 : 1'b1);
+//                     //mmu write
+//                     mmu_wr_dat <= unit_pre_1_dat; //写入数据
+//                     mmu_wr_req <= 1'b1; //写入请求
+//                     mmu_wr_addr <= fp_pre_1_dat; //写入地址
+//                     unit_cnt <= unit_cnt - 1'b1;
+//                     state <= ((unit_cnt == 'd0) || (i_empty|fp_list_empty)) ? 'd1 : 'd5; //如果包存储完跳转到1
+//                 end
+//                 else begin
+//                     fp_rd_en <= 1'b0;
+//                     fifo_rd_en <= 1'b0;
+//                     //mmu write
+//                     mmu_wr_dat <= unit_pre_2_dat; //写入数据 如果该状态写入成功后，下一个状态写入的数据应该是上上周期的数据，直接连接mmu_wr_dat
+//                     mmu_wr_req <= 1'b1; //写入请求
+//                     mmu_wr_addr <= fp_pre_2_dat; //写入地址
+//                     unit_cnt <= unit_cnt;
+//                     state <= 'd6;
+//                 end
+//             end
+//         endcase
+//     end
+// end
+
+//申请填充freelist
 reg [2:0] aply_state;
 always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin
@@ -286,12 +423,11 @@ always @(posedge i_clk or negedge i_rst_n) begin
             end
             'd1: begin //开始请求存储
                 aply_req <= 1'b1;
-                aply_state <= i_aply_valid ? 'd0 : 'd1;
+                aply_state <= 'd0;
             end
         endcase
     end
 end
-
 
 reg [6:0] cnt; //初始化填充128个
 //初始化自由指针fifo
@@ -303,17 +439,25 @@ always @(posedge i_clk or negedge i_rst_n) begin
         init_vld <= 1'b0;
     end
     else begin
-        if (~fp_list_full && locked && (cnt < 'd127)) begin
-            fp_wr_en <= (cnt=='d126) ? i_fp_wr_en : 1'b1; //初始化完成后fp的写使能交给mmu
-            free_ptr_din <= (cnt=='d126) ? i_fp_wr_dat : {port, 4'b0000, cnt}; //这里用cnt模拟地址输入，初始化完成后fp的写数据交给mmu
-            cnt <= cnt + 1'b1;
-            init_vld <= (cnt=='d126) ? 1'b1 : 1'b0;
+        if (~fp_list_full && locked) begin
+            if (cnt < 'd127) begin
+                fp_wr_en <= (cnt=='d126) ? i_fp_wr_en : 1'b1; //初始化完成后fp的写使能交给mmu
+                free_ptr_din <= (cnt=='d126) ? i_fp_wr_dat : {port, 4'b0000, cnt}; //这里用cnt模拟地址输入，初始化完成后fp的写数据交给mmu
+                cnt <= cnt + 1'b1;
+                init_vld <= (cnt=='d126) ? 1'b1 : 1'b0;
+            end
+            else begin
+                cnt <= cnt;
+                free_ptr_din <= i_fp_wr_dat;
+                init_vld <= init_vld;
+                fp_wr_en <= i_fp_wr_en;
+            end
         end
         else begin
             free_ptr_din <= free_ptr_din;
-            fp_wr_en <= fp_wr_en;
-            cnt <= cnt;
-            init_vld <= init_vld;
+            fp_wr_en <= 1'b0;
+            cnt <= 'd0;
+            init_vld <= 1'b0;
         end
     end
 end

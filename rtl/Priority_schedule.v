@@ -25,7 +25,7 @@ module priority_schedule (
     input                                  i_clk,
     input                                  i_rst_n,
     
-    input       [4:0]                      i_queue_sel,
+    input       [4:0]                      i_queue_sel,  //bit4 ~ 2: priority     bit1 ~ 0: dest_port低两位
     input       [`DISPATCH_WIDTH-1:0]      i_cb_col_dat,
     input                                  i_cb_col_dat_valid,
     //out of queue cache interface
@@ -45,7 +45,7 @@ module priority_schedule (
     output      [`DISPATCH_WIDTH-1:0]      o_ooqc4_rd_dat, //数据包括首地址和长度
     output                                 o_ooqc4_rd_empty
 );
-
+//优先级队列号：0~31
 //0~7:端口一的8个优先级队列
 //8~15:端口二的8个优先级队列
 //16~23:端口三的8个优先级队列
