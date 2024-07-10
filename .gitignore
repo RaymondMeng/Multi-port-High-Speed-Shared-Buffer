@@ -1,2 +1,13 @@
 .vscode/*
-sim/*.exe
+
+##sim
+sim/*
+!*.c
+!*data.txt
+!*test.sv
+
+##src
+*.srcs/
+
+
+data*.txt
