@@ -1735,323 +1735,600 @@ end
 // 端口申请仲裁
 always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
-        rr <= 4'd0;
+        rr <= PRAM_NUMBER;
         apply_arbi_done <= 1'b0;
         malloc_port <= 4'd0;
         o_mem_apply_refuse <= 16'd0;
     end
     else if (n_state_apply == S_ARBI_APPLY) begin 
-        case(rr) 
-            4'd0: begin 
-                malloc_port <= i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 4'd0;
-                o_mem_apply_refuse <= 16'hfffe;
+        if (PRAM_NUMBER <= 15) begin 
+            case(PRAM_NUMBER)
+                'd0: begin 
+                    malloc_port <= i_mem_apply_sig[0] ? 4'd0 : 
+                                   i_mem_apply_sig[1] ? 4'd1 :
+                                   i_mem_apply_sig[2] ? 4'd2 :
+                                   i_mem_apply_sig[3] ? 4'd3 :
+                                   i_mem_apply_sig[4] ? 4'd4 :
+                                   i_mem_apply_sig[5] ? 4'd5 :
+                                   i_mem_apply_sig[6] ? 4'd6 :
+                                   i_mem_apply_sig[7] ? 4'd7 :
+                                   i_mem_apply_sig[8] ? 4'd8 :
+                                   i_mem_apply_sig[9] ? 4'd9 :
+                                   i_mem_apply_sig[10] ? 4'd10 :
+                                   i_mem_apply_sig[11] ? 4'd11 :
+                                   i_mem_apply_sig[12] ? 4'd12 :
+                                   i_mem_apply_sig[13] ? 4'd13 :
+                                   i_mem_apply_sig[14] ? 4'd14 :
+                                   i_mem_apply_sig[15] ? 4'd15 : 4'd0;
+                end
+                'd1: begin 
+                    malloc_port <= i_mem_apply_sig[1] ? 4'd1 :
+                                   i_mem_apply_sig[2] ? 4'd2 :
+                                   i_mem_apply_sig[3] ? 4'd3 :
+                                   i_mem_apply_sig[4] ? 4'd4 :
+                                   i_mem_apply_sig[5] ? 4'd5 :
+                                   i_mem_apply_sig[6] ? 4'd6 :
+                                   i_mem_apply_sig[7] ? 4'd7 :
+                                   i_mem_apply_sig[8] ? 4'd8 :
+                                   i_mem_apply_sig[9] ? 4'd9 :
+                                   i_mem_apply_sig[10] ? 4'd10 :
+                                   i_mem_apply_sig[11] ? 4'd11 :
+                                   i_mem_apply_sig[12] ? 4'd12 :
+                                   i_mem_apply_sig[13] ? 4'd13 :
+                                   i_mem_apply_sig[14] ? 4'd14 :
+                                   i_mem_apply_sig[15] ? 4'd15 : 
+                                   i_mem_apply_sig[0] ? 4'd0 : 4'd0;
+                end
+                'd2: begin 
+                    malloc_port <= i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 : 4'd0;
+                end
+                'd3: begin 
+                    malloc_port <= i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 : 4'd0;
+                end
+                'd4: begin 
+                    malloc_port <= i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 : 4'd0;
+                end
+                'd5: begin 
+                    malloc_port <= i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 : 4'd0;
+                end
+                'd6: begin 
+                    malloc_port <= i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 : 
+                                i_mem_apply_sig[5] ? 4'd5 : 4'd0;
+                end
+                'd7: begin 
+                    malloc_port <= i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 : 4'd0;
+                end
+                'd8: begin 
+                    malloc_port <= i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 : 4'd0;
+                end
+                'd9: begin 
+                    malloc_port <= i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 : 4'd0;
+                end
+                'd10: begin 
+                    malloc_port <= i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 : 4'd0;
+                end
+                'd11: begin 
+                    malloc_port <= i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 : 4'd0;
+                end
+                'd12: begin 
+                    malloc_port <= i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 : 4'd0;
+                end
+                'd13: begin 
+                    malloc_port <= i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 : 4'd0;
+                end
+                'd14: begin 
+                    malloc_port <= i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 : 4'd0;
+                end
+                'd15: begin 
+                    malloc_port <= i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 : 4'd0;
+                end
+            endcase
+        end
+        else begin 
+            case(rr) 
+                4'd0: begin 
+                    malloc_port <= i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 4'd0;
 
-            end
-            4'd1: begin 
-                malloc_port <= i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 4'd0;
-                o_mem_apply_refuse <= 16'hfffd;
-            end
-            4'd2: begin 
-                malloc_port <= i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 : 4'd0;
-                o_mem_apply_refuse <= 16'hfffb;
-            end
-            4'd3: begin 
-                malloc_port <= i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 : 4'd0;
-                o_mem_apply_refuse <= 16'hfff7;
-            end
-            4'd4: begin 
-                malloc_port <= i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 : 4'd0;
-                o_mem_apply_refuse <= 16'hffef;
-            end
-            4'd5: begin 
-                malloc_port <= i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 : 4'd0;
-                o_mem_apply_refuse <= 16'hffdf;
-            end
-            4'd6: begin 
-                malloc_port <= i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 : 
-                               i_mem_apply_sig[5] ? 4'd5 : 4'd0;
-                o_mem_apply_refuse <= 16'hffbf;
-            end
-            4'd7: begin 
-                malloc_port <= i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 : 4'd0;
-                o_mem_apply_refuse <= 16'hff7f;
-            end
-            4'd8: begin 
-                malloc_port <= i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 : 4'd0;
-                o_mem_apply_refuse <= 16'hfeff;
-            end
-            4'd9: begin 
-                malloc_port <= i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 : 4'd0;
-                o_mem_apply_refuse <= 16'hfdff;
-            end
-            4'd10: begin 
-                malloc_port <= i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 : 4'd0;
-                o_mem_apply_refuse <= 16'hfbff;
-            end
-            4'd11: begin 
-                malloc_port <= i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 : 4'd0;
-                o_mem_apply_refuse <= 16'hf7ff;
-            end
-            4'd12: begin 
-                malloc_port <= i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 : 4'd0;
-                o_mem_apply_refuse <= 16'hefff;
-            end
-            4'd13: begin 
-                malloc_port <= i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 : 4'd0;
-                o_mem_apply_refuse <= 16'hdfff;
-            end
-            4'd14: begin 
-                malloc_port <= i_mem_apply_sig[14] ? 4'd14 :
-                               i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 : 4'd0;
-                o_mem_apply_refuse <= 16'hbfff;
-            end
-            4'd15: begin 
-                malloc_port <= i_mem_apply_sig[15] ? 4'd15 : 
-                               i_mem_apply_sig[0] ? 4'd0 : 
-                               i_mem_apply_sig[1] ? 4'd1 :
-                               i_mem_apply_sig[2] ? 4'd2 :
-                               i_mem_apply_sig[3] ? 4'd3 :
-                               i_mem_apply_sig[4] ? 4'd4 :
-                               i_mem_apply_sig[5] ? 4'd5 :
-                               i_mem_apply_sig[6] ? 4'd6 :
-                               i_mem_apply_sig[7] ? 4'd7 :
-                               i_mem_apply_sig[8] ? 4'd8 :
-                               i_mem_apply_sig[9] ? 4'd9 :
-                               i_mem_apply_sig[10] ? 4'd10 :
-                               i_mem_apply_sig[11] ? 4'd11 :
-                               i_mem_apply_sig[12] ? 4'd12 :
-                               i_mem_apply_sig[13] ? 4'd13 :
-                               i_mem_apply_sig[14] ? 4'd14 : 4'd0;
-                o_mem_apply_refuse <= 16'h7fff;
-            end
-            default: begin 
-                malloc_port <= 4'd0;
-                o_mem_apply_refuse <= 16'hfffe;
-            end
-        endcase
+                end
+                4'd1: begin 
+                    malloc_port <= i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 4'd0;
+                end
+                4'd2: begin 
+                    malloc_port <= i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 : 4'd0;
+                end
+                4'd3: begin 
+                    malloc_port <= i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 : 4'd0;
+                end
+                4'd4: begin 
+                    malloc_port <= i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 : 4'd0;
+                end
+                4'd5: begin 
+                    malloc_port <= i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 : 4'd0;
+                end
+                4'd6: begin 
+                    malloc_port <= i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 : 
+                                i_mem_apply_sig[5] ? 4'd5 : 4'd0;
+                end
+                4'd7: begin 
+                    malloc_port <= i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 : 4'd0;
+                end
+                4'd8: begin 
+                    malloc_port <= i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 : 4'd0;
+                end
+                4'd9: begin 
+                    malloc_port <= i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 : 4'd0;
+                end
+                4'd10: begin 
+                    malloc_port <= i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 : 4'd0;
+                end
+                4'd11: begin 
+                    malloc_port <= i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 : 4'd0;
+                end
+                4'd12: begin 
+                    malloc_port <= i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 : 4'd0;
+                end
+                4'd13: begin 
+                    malloc_port <= i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 : 4'd0;
+                end
+                4'd14: begin 
+                    malloc_port <= i_mem_apply_sig[14] ? 4'd14 :
+                                i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 : 4'd0;
+                end
+                4'd15: begin 
+                    malloc_port <= i_mem_apply_sig[15] ? 4'd15 : 
+                                i_mem_apply_sig[0] ? 4'd0 : 
+                                i_mem_apply_sig[1] ? 4'd1 :
+                                i_mem_apply_sig[2] ? 4'd2 :
+                                i_mem_apply_sig[3] ? 4'd3 :
+                                i_mem_apply_sig[4] ? 4'd4 :
+                                i_mem_apply_sig[5] ? 4'd5 :
+                                i_mem_apply_sig[6] ? 4'd6 :
+                                i_mem_apply_sig[7] ? 4'd7 :
+                                i_mem_apply_sig[8] ? 4'd8 :
+                                i_mem_apply_sig[9] ? 4'd9 :
+                                i_mem_apply_sig[10] ? 4'd10 :
+                                i_mem_apply_sig[11] ? 4'd11 :
+                                i_mem_apply_sig[12] ? 4'd12 :
+                                i_mem_apply_sig[13] ? 4'd13 :
+                                i_mem_apply_sig[14] ? 4'd14 : 4'd0;
+                end
+                default: begin 
+                    malloc_port <= 4'd0;
+                end
+            endcase
+        end
         rr <= rr + 1'b1;
         apply_arbi_done <= 1'b1;
     end
@@ -2071,6 +2348,7 @@ always @(malloc_port or i_rst_n or i_clk) begin : prot_sel
         o_mem_addr_vld_sig = 'd0;
         o_mem_clk = 'd0;
         o_mem_apply_done = 'd0;
+        o_mem_apply_refuse = 'd0;
     end
     else begin 
         malloc_num = i_mem_apply_num[malloc_port*`DATA_FRAME_NUM_WIDTH+:`DATA_FRAME_NUM_WIDTH];
@@ -2081,12 +2359,14 @@ always @(malloc_port or i_rst_n or i_clk) begin : prot_sel
                 o_mem_addr_vld_sig[i] = mem_addr_vld_sig;
                 o_mem_clk[i] = div2_reg_rvs;
                 o_mem_apply_done[i] = malloc_done;
+                o_mem_apply_refuse[i] = 'd1;
             end
             else begin 
                 o_mem_addr[i*`VT_ADDR_WIDTH+:16] = 'd0;
                 o_mem_addr_vld_sig[i] = 'd0;
                 o_mem_clk[i] = 'd0;
                 o_mem_apply_done[i] = 'd0;
+                o_mem_apply_refuse[i] = 'd0;
             end
         end
     end
@@ -2456,7 +2736,7 @@ end
 always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         portb_addr <= 11'd0;
-        read_done <= 1'b0;
+        //read_done <= 1'b0;
         o_portb_addr_vld <= 1'b0;
         portb_din <= 'd0;
     end
@@ -2467,7 +2747,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
     else if (c_state_reclaim == S_READ_RECLAIM && ~read_done) begin
         if (portb_rd_cnt == 0 && div2_reg_reclaim == 1'b0)begin 
             o_portb_addr_vld <= 1'b0;
-            read_done <= 1'b1;
+            //read_done <= 1'b1;
         end
         else begin
             portb_addr <= portb_dout;
@@ -2480,6 +2760,24 @@ always @(posedge i_clk or negedge i_rst_n) begin
     else begin 
         portb_addr <= portb_addr;
         o_portb_addr_vld <= o_portb_addr_vld;
+        //read_done <= 1'b0;
+    end
+end
+
+// 端口b数据读取
+always @(posedge i_clk or negedge i_rst_n) begin
+    if (~i_rst_n) begin 
+        read_done <= 1'b0;
+    end
+    else if (c_state_reclaim == S_READ_RECLAIM && ~read_done) begin
+        if (portb_rd_cnt == 0 && div2_reg_reclaim == 1'b0)begin 
+            read_done <= 1'b1;
+        end
+        else begin
+            read_done <= 1'b0;
+        end
+    end
+    else begin 
         read_done <= 1'b0;
     end
 end
@@ -2500,6 +2798,21 @@ always @(posedge i_clk or negedge i_rst_n) begin
         web <= 1'b0;
         reclaim_done <= 1'b0;
         change_reclaim <= 1'b0;
+    end
+end
+
+// portb_addr_reg
+reg  [`MEM_ADDR_WIDTH-1:0] portb_addr_reg;
+
+always @(posedge i_clk or negedge i_rst_n) begin
+    if (~i_rst_n) begin
+        portb_addr_reg <= 'd0;
+    end
+    else if (c_state_reclaim == S_RECLAIM && ~reclaim_done) begin 
+        portb_addr_reg <= portb_addr;
+    end
+    else begin 
+        portb_addr_reg <= 'd0;
     end
 end
 
@@ -2558,12 +2871,12 @@ always @(posedge i_clk or negedge i_rst_n) begin
         if (PRAM_NUMBER >=16)
             pram_free_list <= {11'd0, 11'h7ff, 12'h800};
         else 
-            pram_free_list <= {11'd128, 11'h7ff, 12'h800};
+            pram_free_list <= {11'd128, 11'h7ff, 12'd1920};
     end
     else begin 
         case({change_apply, change_reclaim})
             2'b01: begin 
-                pram_free_list[22:12] <= portb_dout;
+                pram_free_list[22:12] <= portb_addr_reg;
                 pram_free_list[11:0] <= pram_free_list[11:0] + read_num;
             end
             2'b10: begin 
@@ -2604,7 +2917,13 @@ always @(read_port or i_rst_n or i_read_data) begin : output_read_data_res
     end
 end
 
-always @(read_port or i_rst_n or read_done) begin : output_read_done_res
+reg read_done_reg;
+
+always @(posedge i_clk or negedge i_clk) begin
+    read_done_reg <= read_done;
+end
+
+always @(read_port or i_rst_n or read_done_reg) begin : output_read_done_res
     integer a;
     if (~i_rst_n) begin
         o_read_done = 'd0;
@@ -2612,7 +2931,7 @@ always @(read_port or i_rst_n or read_done) begin : output_read_done_res
     else begin 
         for (a = 0; a < 16; a = a + 1) begin 
             if (a == read_port) begin 
-                o_read_done[a] = read_done;
+                o_read_done[a] = read_done_reg;
             end
             else begin 
                 o_read_done[a] = 'd0;
@@ -2621,7 +2940,7 @@ always @(read_port or i_rst_n or read_done) begin : output_read_done_res
     end
 end
 
-always @(read_port or i_rst_n or div2_reg_reclaim_rvs) begin : output_read_clk_res
+always @(read_port or i_rst_n or div2_reg_reclaim) begin : output_read_clk_res
     integer b;
     if (~i_rst_n) begin
         o_read_clk = 'd0;

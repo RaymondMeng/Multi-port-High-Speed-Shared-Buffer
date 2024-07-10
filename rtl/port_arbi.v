@@ -53,6 +53,8 @@ module port_arbi #(
     input [`PRAM_NUM - 1:0]                                i_data_vld,                 // 输出数据有效位（作为FIFO的使能信号）
     input [(`VT_ADDR_WIDTH * `PRAM_NUM) - 1:0]             i_mem_vt_addr,              // 分配内存的虚拟地址
 
+    output                                                 o_malloc_done,
+
     // output reg [`PRAM_NUM * `PRAM_NUM_WIDTH - 1:0]         o_pram_mem_apply_port_num,  // 目标pram号，输出至接口模块进行分配
     output reg [`PRAM_NUM - 1:0]                           o_pram_mem_apply_req,       // 数据请求信号
     output reg [`PRAM_NUM * `DATA_FRAME_NUM_WIDTH - 1:0]   o_pram_mem_apply_num,       // 缓存申请数量
@@ -198,6 +200,7 @@ end
 // assign o_mem_malloc_clk = i_mem_malloc_clk;                 // explore the clk port to pram_ctor
 assign priority_set = PRIORITY_PRAM_NUM;
 assign o_init_done = &i_init_done;
+assign o_malloc_done = pram_apply_mem_done;
 
 // port_belong_pram 
 always @(posedge i_clk or negedge i_rst_n) begin 

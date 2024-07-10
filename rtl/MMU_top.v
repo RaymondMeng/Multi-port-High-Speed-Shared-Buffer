@@ -16,6 +16,8 @@ module MMU_top(
     output     [`PORT_NUM*`VT_ADDR_WIDTH-1:0]        o_mem_vt_addr,
     output     [`PORT_NUM-1:0]                       o_malloc_clk,
 
+    output     [`PORT_NUM-1:0]                       o_malloc_done,
+
     // write
     input      [`PORT_NUM-1:0]                       i_wr_clk,                     
     input      [`PRAM_NUM_WIDTH*`PORT_NUM-1:0]       i_wr_port_sel,
@@ -89,6 +91,8 @@ generate
                             
             .i_data_vld(data_vld_sig[i]),                                                        // 输出数据有效位（作为FIFO的使能信号）
             .i_mem_vt_addr(mem_vt_addr_sig[i]),                                                  // 分配内存的虚拟地址
+
+            .o_malloc_done(o_malloc_done[i]),
                             
             //.o_pram_mem_apply_port_num(pram_mem_apply_port_num_sig),                           // 目标pram号，输出至接口模块进行分配
             .o_pram_mem_apply_req(pram_mem_apply_req_sig[i]),                                    // 数据请求信号

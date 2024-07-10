@@ -54,30 +54,31 @@ module Port_SGDMA #(
     // input                           i_cb14_full,    
 
     /*mmu interface*/
-    output                          o_mmu_wr_req,   //mmu存储请求
-    output    [`PRAM_NUM_WIDTH-1:0] o_sram_sel,     //申请sram片区号
-    output                          o_mmu_wr_en,    //sram写使能
-    output    [`ADDR_WIDTH-1:0]     o_mmu_wr_addr,  //存储请求地址
-    output    [`DATA_DWIDTH-1:0]    o_mmu_wr_dat,   //存储数据
-    output                          o_mmu_wr_done,  //存储完成标志位
-    input                           i_mmu_wr_ready, //写请求响应
+    output                          o_mmu_wr_req,         //mmu存储请求
+    output    [`PRAM_NUM_WIDTH-1:0] o_sram_sel,           //申请sram片区号
+    output                          o_mmu_wr_en,          //sram写使能
+    output    [`ADDR_WIDTH-1:0]     o_mmu_wr_addr,        //存储请求地址
+    output    [`DATA_DWIDTH-1:0]    o_mmu_wr_dat,         //存储数据
+    output                          o_mmu_wr_done,        //存储完成标志位
+    input                           i_mmu_wr_ready,       //写请求响应
 
     /*freelist interface*/
-    input                           i_fp_wr_en,     //空闲地址队列写使能
-    input     [`ADDR_WIDTH-1:0]     i_fp_wr_dat,    //空闲地址队列写数据
-    input                           i_aply_valid,   //填充请求响应信号
-    //output                          o_fp_list_full,
-    output                          o_aply_req,     //申请填充freelist
-    output    [6:0]                 o_length,       //申请空闲地址长度
-
-    input                           locked          //125MHz时钟使能信号
+    input                           i_mmu_malloc_done,    //mmu内存分配完成
+    input                           i_fp_wr_en,           //空闲地址队列写使能
+    input     [`ADDR_WIDTH-1:0]     i_fp_wr_dat,          //空闲地址队列写数据
+    //input                           i_aply_valid,         //填充请求响应信号
+    //output                          o_fp_list_full      ,
+    output                          o_aply_req,           //申请填充freelist
+    output    [6:0]                 o_length,             //申请空闲地址长度
+    
+    input                           locked                //125MHz时钟使能信号
 );
 
 reg [3:0] state;
 reg fifo_rd_en;
-
-/* | 17 ~ 7 |  6 ~ 4   |   3 ~ 0   | */
-/* | length | priority | dest_port | */
+            //不算包头的字节数
+/*| 21 ~ 18  | 17 ~ 7 |  6 ~ 4   |   3 ~ 0   | */
+/*| src_port | length | priority | dest_port | */
 reg [`DATA_DWIDTH-1:0] pack_head;
 //reg [3:0] dest_port;
 //reg [10:0] length;
@@ -86,7 +87,7 @@ reg [`ADDR_WIDTH-1:0] first_unit_addr;
 reg [`DATA_DWIDTH-1:0] unit_pre_1_dat, unit_pre_2_dat, unit_pre_3_dat; //定义第n-1,n-2,n-3个数据
 wire [6:0] unit_cnt_wire;
 
-assign unit_cnt_wire = (i_dat[17:7] >> 4) + i_dat[17:7] % 4; //直接作为值拼接也是可以的
+assign unit_cnt_wire = (i_dat[17:7] >> 4) + (|(i_dat[17:7] % 16)) + 'd1; //直接作为值拼接也是可以的
 
 //crossbar buffer defines
 reg [3:0] sel;
@@ -236,10 +237,10 @@ always @(posedge i_clk or negedge i_rst_n) begin
                 //first_unit_addr <= free_ptr_dout;
                 // aply_req <= 1'b1; //申请
                 //pack_head <= i_dat;
-                length <= (i_dat[17:7] >> 4) + i_dat[17:7] % 4;
-                unit_cnt <= (i_dat[17:7] >> 4) + i_dat[17:7] % 4; //包长度
+                length <= (i_dat[17:7] >> 4) + (|(i_dat[17:7] % 16)) + 'd1; //加包头的长度
+                unit_cnt <= (i_dat[17:7] >> 4) + (|(i_dat[17:7] % 16)); //包长度
                 //cnt_temp <= (i_dat[17:7] >> 4) + 1'b1;
-                cb_din <= {free_ptr_dout, unit_cnt_wire, i_dat[6:0]}; //30位 16 7 7
+                cb_din <= {free_ptr_dout, unit_cnt_wire, i_dat[6:0]}; //30位 16 7 7    空闲地址  数量  目的端口号
                 cb_wr_en <= 1'b1;
                 state <= 'd6;
             end
@@ -408,26 +409,55 @@ end
 //     end
 // end
 
-//申请填充freelist
-reg [2:0] aply_state;
+// reg malloc_done_r;
+// wire comb_malloc_done;
+// always @(posedge i_clk) begin
+//     malloc_done_r <= i_mmu_malloc_done;
+// end
+// assign comb_malloc_done = ~i_mmu_malloc_done & malloc_done_r;
+
+//申请填充freelist 三段式
+reg [2:0] aply_state, aply_state_n;
 always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin
-        aply_req <= 1'b0;
         aply_state <= 'd0;
     end
     else begin
+        aply_state <= aply_state_n; 
+    end
+end
+
+always @(*) begin
+    if (~i_rst_n) begin
+        aply_req = 1'b0;
+        aply_state_n = 'd0;
+    end
+    else begin
+        aply_req = 1'b0;
         case (aply_state)
             'd0: begin
-                aply_req <= 1'b0;
-                aply_state <= (state == 'd5) ? 'd1 : 'd0;
+                aply_state_n = (state == 'd5) ? 'd1 : 'd0;
             end
             'd1: begin //开始请求存储
-                aply_req <= 1'b1;
-                aply_state <= 'd0;
+                aply_req = 1'b1;
+                aply_state_n = 'd2;
+            end
+            'd2: begin
+                if (i_mmu_malloc_done) begin
+                    aply_state_n = 'd0;
+                end
+                else begin
+                    aply_state_n = 'd2;
+                    aply_req = 'd1;
+                end
             end
         endcase
     end
 end
+
+
+//  
+// assign comb_malloc_done = i_mmu_malloc_done ? 1'b1 : 1'b0;
 
 reg [6:0] cnt; //初始化填充128个
 //初始化自由指针fifo

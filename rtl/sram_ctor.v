@@ -538,6 +538,10 @@ always @(sel or i_clk) begin
     end
 end
 
+wire [127:0] rd_dat;
+
+assign o_rd_data = rd_dat;
+
 sram_128x2048 sram_u(
     .addra(wr_phy_addr),
     .clka(wr_clk),
@@ -546,7 +550,7 @@ sram_128x2048 sram_u(
 
     .addrb(i_rd_phy_addr),
     .clkb(i_rd_clk),
-    .doutb(o_rd_data)
+    .doutb(rd_dat)
 );
 
 endmodule
