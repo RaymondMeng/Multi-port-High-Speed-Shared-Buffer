@@ -311,7 +311,8 @@ wire [`PORT_NUM-1:0] port_almost_full ;
 wire [`PORT_NUM-1:0] port_wr_sop ;
 wire [`PORT_NUM-1:0] port_wr_eop ;
 wire [`PORT_NUM-1:0] port_rd_ready;
-wire [`PORT_NUM-1:0] port_rd_sop, port_rd_eop, port_rd_vld;
+reg  [`PORT_NUM-1:0] port_rd_sop, port_rd_eop;
+wire [`PORT_NUM-1:0] port_rd_vld;
 
 // wire [`DATA_WIDTH-1:0] sdata;
 // wire sdat_valid;
@@ -1223,25 +1224,92 @@ generate
   end
 endgenerate
 
-//主要用于SOP和EOP信号的生成以及fifo数据输出
+reg [2:0] opt_sig_state [`PORT_NUM-1:0];
+reg [9:0] pkg_unit_cnt_reg [`PORT_NUM-1:0];
+// reg [`PORT_NUM-1:0] opt_vld;
+
+//主要用于SOP和EOP信号的生成以及fifo数据输出 64位读取的逻辑
 genvar p;
 generate
-  for (p = 0; p < `PORT_NUM; p = p + 1) begin
+  for (p = 0; p < `PORT_NUM; p = p + 1) begin : output_signal_ctrl
+    assign port_rd_vld[p] = opt_fifo_rd_en_r[p];
     always @(posedge clk or negedge rst_n) begin
       if (~rst_n) begin
         opt_fifo_rd_en[p] <= 1'b0;
         opt_fifo_rd_en_r[p] <= 1'b0;
+        port_rd_sop[p] <= 1'b0;
+        port_rd_eop[p] <= 1'b0;
+        //port_rd_vld[p] <= 1'b0;
+        opt_sig_state[p] <= 'd0;
+        pkg_unit_cnt_reg[p] <= 'd0;
       end
       else begin
-        // opt_fifo_rd_en[p] <= opt_fifo_empty[p] ? 1'b0 : 1'b1;
-        opt_fifo_rd_en[p] <= opt_fifo_empty[p] ? 1'b0 : 1'b1;
         opt_fifo_rd_en_r[p] <= opt_fifo_rd_en[p];
+        if (opt_fifo_empty[p]) begin
+          opt_fifo_rd_en[p] <= 1'b0;
+          port_rd_sop[p] <= 1'b0;
+          port_rd_eop[p] <= 1'b0;
+          //port_rd_vld[p] <= 1'b0;
+          opt_sig_state[p] <= opt_sig_state[p];
+          pkg_unit_cnt_reg[p] <= pkg_unit_cnt_reg[p];
+          opt_fifo_rd_en_r[p] <= 1'b0;
+        end
+        else begin
+          port_rd_sop[p] <= 1'b0;
+          port_rd_eop[p] <= 1'b0;
+          //port_rd_vld[p] <= 1'b0;
+          pkg_unit_cnt_reg[p] <= pkg_unit_cnt_reg[p];
+          case (opt_sig_state[p])
+            'd0: begin
+              opt_fifo_rd_en[p] <= 1'b1; //读使能开启
+              port_rd_sop[p] <= 1'b1;    //读sop信号开启
+              opt_sig_state[p] <= 'd1;
+            end 
+            'd1: begin
+              opt_sig_state[p] <= 'd2;
+              port_rd_sop[p] <= 1'b0;    //读sop信号关闭
+              opt_fifo_rd_en[p] <= 1'b1; //读使能开启
+              //port_rd_vld[p] <= 1'b1;    //端口数据输出有效
+            end
+            'd2: begin                   //读取到包头高64位
+              //pkg_unit_cnt_reg[p] <= ((opt_fifo_rd_dout[p][17:7] >> 'd4) + (|(opt_fifo_rd_dout[p][17:7] % 'd16))) << 2; //获取包信元数量
+              opt_fifo_rd_en[p] <= 1'b1; //读使能开启
+              //port_rd_vld[p] <= 1'b1;    //端口数据输出有效
+              opt_sig_state[p] <= 'd3;
+            end
+            'd3: begin                   //读取到包头低64位
+              pkg_unit_cnt_reg[p] <= (((opt_fifo_rd_dout[p][17:7] >> 'd4) + (|((opt_fifo_rd_dout[p][17:7]) % 'd16))) << 'd1) + 'd1; //获取包信元数量
+              opt_fifo_rd_en[p] <= 1'b1; //读使能开启
+              //port_rd_vld[p] <= 1'b1;    //端口数据输出有效
+              opt_sig_state[p] <= 'd4;
+            end
+            'd4: begin
+              if (pkg_unit_cnt_reg[p] > 'd2) begin
+                pkg_unit_cnt_reg[p] <= pkg_unit_cnt_reg[p] - 'd1;
+                opt_fifo_rd_en[p] <= 1'b1; //读使能开启
+                //port_rd_vld[p] <= 1'b1;    //端口数据输出有效
+                opt_sig_state[p] <= 'd4;
+              end
+              else begin
+                pkg_unit_cnt_reg[p] <= pkg_unit_cnt_reg[p] - 'd1;
+                opt_fifo_rd_en[p] <= 1'b0; //读使能开启
+                //port_rd_vld[p] <= 1'b1;    //端口数据输出有效
+                opt_sig_state[p] <= 'd5;
+              end
+            end
+            'd5: begin //生成eop信号
+              opt_fifo_rd_en[p] <= 1'b0; //读使能开启
+              port_rd_eop[p] <= 1'b1;
+              opt_sig_state[p] <= 'd0;
+            end
+          endcase
+        end
       end
     end
-    assign port_rd_sop[p] = opt_fifo_rd_en[p] & ~opt_fifo_rd_en_r[p]; //生成sop信号
-    assign port_rd_eop[p] = ~opt_fifo_rd_en[p] & opt_fifo_rd_en_r[p]; //生成eop信号
-    assign port_rd_vld[p] = opt_fifo_rd_en[p] & opt_fifo_rd_en_r[p]; //生成vld信号
   end
 endgenerate
+
+
+
 
 endmodule
