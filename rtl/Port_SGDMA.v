@@ -79,7 +79,7 @@ reg fifo_rd_en;
             //不算包头的字节数
 /*| 21 ~ 18  | 17 ~ 7 |  6 ~ 4   |   3 ~ 0   | */
 /*| src_port | length | priority | dest_port | */
-reg [`DATA_DWIDTH-1:0] pack_head;
+// reg [`DATA_DWIDTH-1:0] pack_head;
 //reg [3:0] dest_port;
 //reg [10:0] length;
 reg [6:0] unit_cnt, cnt_temp;
@@ -96,7 +96,7 @@ reg cb_wr_en;
 wire cb_full;
 wire [`DISPATCH_WIDTH-1:0] cb_dat;
 
-assign cb_dat = {first_unit_addr, cnt_temp, pack_head[6:0]}; //crossbar32位包调度数据
+// assign cb_dat = {first_unit_addr, cnt_temp, pack_head[6:0]}; //crossbar32位包调度数据
 
 // assign o_cb11_din = (sel == 'd0) & cb_din;
 // assign o_cb12_din = (sel == 'd1) & cb_din;
@@ -159,7 +159,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
     if (!i_rst_n) begin
         /*初始化*/
         fifo_rd_en <= 1'b0;
-        pack_head <= 'd0;
+        // pack_head <= 'd0;
         //dest_port <= 'd0;
         //length <= 'd0;
         unit_cnt <= 'd0;
@@ -182,7 +182,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
         mmu_wr_done <= 1'b0;
     end
     else begin 
-        pack_head <= pack_head;
+        // pack_head <= pack_head;
         first_unit_addr <= first_unit_addr;
         mmu_wr_req <= 1'b0;
         mmu_wr_en <= 1'b0;
@@ -238,7 +238,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
                 // aply_req <= 1'b1; //申请
                 //pack_head <= i_dat;
                 length <= (i_dat[17:7] >> 4) + (|(i_dat[17:7] % 16)) + 'd1; //加包头的长度
-                unit_cnt <= (i_dat[17:7] >> 4) + (|(i_dat[17:7] % 16)); //包长度
+                unit_cnt <= (i_dat[17:7] >> 4) + (|(i_dat[17:7] % 16)); //包长度(不含包头)
                 //cnt_temp <= (i_dat[17:7] >> 4) + 1'b1;
                 cb_din <= {free_ptr_dout, unit_cnt_wire, i_dat[6:0]}; //30位 16 7 7    空闲地址  数量  目的端口号
                 cb_wr_en <= 1'b1;
@@ -459,8 +459,39 @@ end
 //  
 // assign comb_malloc_done = i_mmu_malloc_done ? 1'b1 : 1'b0;
 
-reg [6:0] cnt; //初始化填充128个
+reg [7:0] cnt; //初始化填充128个
 //初始化自由指针fifo
+// always @(posedge i_clk or negedge i_rst_n) begin
+//     if (!i_rst_n) begin
+//         free_ptr_din <= 'd0;
+//         fp_wr_en <= 1'b0;
+//         cnt <= 'd0;
+//         init_vld <= 1'b0;
+//     end
+//     else begin
+//         if (~fp_list_full && locked) begin
+//             if (cnt < 'd127) begin
+//                 fp_wr_en <= (cnt=='d126) ? i_fp_wr_en : 1'b1; //初始化完成后fp的写使能交给mmu
+//                 free_ptr_din <= (cnt=='d126) ? i_fp_wr_dat : {port, 4'b0000, cnt}; //这里用cnt模拟地址输入，初始化完成后fp的写数据交给mmu
+//                 cnt <= cnt + 1'b1;
+//                 init_vld <= (cnt=='d126) ? 1'b1 : 1'b0;
+//             end
+//             else begin
+//                 cnt <= cnt;
+//                 free_ptr_din <= i_fp_wr_dat;
+//                 init_vld <= init_vld;
+//                 fp_wr_en <= i_fp_wr_en;
+//             end
+//         end
+//         else begin
+//             free_ptr_din <= free_ptr_din;
+//             fp_wr_en <= 1'b0;
+//             cnt <= 'd0;
+//             init_vld <= 1'b0;
+//         end
+//     end
+// end
+
 always @(posedge i_clk or negedge i_rst_n) begin
     if (!i_rst_n) begin
         free_ptr_din <= 'd0;
@@ -470,17 +501,17 @@ always @(posedge i_clk or negedge i_rst_n) begin
     end
     else begin
         if (~fp_list_full && locked) begin
-            if (cnt < 'd127) begin
-                fp_wr_en <= (cnt=='d126) ? i_fp_wr_en : 1'b1; //初始化完成后fp的写使能交给mmu
-                free_ptr_din <= (cnt=='d126) ? i_fp_wr_dat : {port, 4'b0000, cnt}; //这里用cnt模拟地址输入，初始化完成后fp的写数据交给mmu
+            if (cnt < 'd129) begin
+                fp_wr_en <= 1'b1; //初始化完成后fp的写使能交给mmu
+                free_ptr_din <= {port, 4'b0000, cnt[6:0]}; //这里用cnt模拟地址输入，初始化完成后fp的写数据交给mmu
                 cnt <= cnt + 1'b1;
-                init_vld <= (cnt=='d126) ? 1'b1 : 1'b0;
+                init_vld <= (cnt=='d128) ? 1'b1 : 1'b0;
             end
             else begin
                 cnt <= cnt;
-                free_ptr_din <= i_fp_wr_dat;
+                free_ptr_din <= free_ptr_din;
                 init_vld <= init_vld;
-                fp_wr_en <= i_fp_wr_en;
+                fp_wr_en <= 1'b0;
             end
         end
         else begin
@@ -492,18 +523,35 @@ always @(posedge i_clk or negedge i_rst_n) begin
     end
 end
 
+wire fp_wr_en_wire;
+wire [`ADDR_WIDTH-1:0] fp_wr_dat_wire;
 
-//自由指针FIFO  宽度和深度待定 如何补充free pointer? 现在是256×16
+assign fp_wr_en_wire = (cnt < 'd129) ? fp_wr_en : i_fp_wr_en;
+assign fp_wr_dat_wire = (cnt < 'd129) ? free_ptr_din : i_fp_wr_dat;
+
+// 自由指针FIFO  宽度和深度待定 如何补充free pointer? 现在是256×16
 free_ptr_list free_ptr_list_inst (
   .clk(i_clk),                    // input wire clk
   .srst(~i_rst_n),                  // input wire srst
-  .din(free_ptr_din),                    // input wire [16 : 0] din
-  .wr_en(fp_wr_en),                // input wire wr_en
+  .din(fp_wr_dat_wire),                    // input wire [16 : 0] din
+  .wr_en(fp_wr_en_wire),                // input wire wr_en
   .rd_en(fp_rd_en_wire),                // input wire rd_en
   .dout(free_ptr_dout),                  // output wire [16 : 0] dout
   .full(fp_list_full),                  // output wire full
   .empty(fp_list_empty),                // output wire empty
   .almost_empty(fp_list_almost_empty)  // output wire almost_empty
 );
+
+// free_ptr_list free_ptr_list_inst (
+//   .clk(i_clk),                    // input wire clk
+//   .srst(~i_rst_n),                  // input wire srst
+//   .din(free_ptr_din),                    // input wire [16 : 0] din
+//   .wr_en(fp_wr_en),                // input wire wr_en
+//   .rd_en(fp_rd_en_wire),                // input wire rd_en
+//   .dout(free_ptr_dout),                  // output wire [16 : 0] dout
+//   .full(fp_list_full),                  // output wire full
+//   .empty(fp_list_empty),                // output wire empty
+//   .almost_empty(fp_list_almost_empty)  // output wire almost_empty
+// );
 
 endmodule
