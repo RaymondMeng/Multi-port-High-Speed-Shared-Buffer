@@ -241,7 +241,7 @@ assign inner_bigger_than_64_reg = port_belong_pram & bigger_than_64_reg;
 assign outer_bigger_than_64_reg = (~port_belong_pram) & bigger_than_64_reg;
 
 // 内部空间计算，以及计算完成标志位寄存器置位
-always @(i_clk or i_rst_n) begin 
+always @(*) begin 
     if (~i_rst_n) begin 
         inner_mem_enough_reg = 1'b0;
         inner_arbi_res = 5'd0;
@@ -2050,7 +2050,7 @@ always @(i_clk or i_rst_n) begin
 end
 
 // 空闲pram状态检测
-always @(i_clk or i_rst_n) begin 
+always @(*) begin 
     if (~i_rst_n) begin 
         scan_chip_done = 1'b0;
         exist_idle_chip_reg = 1'b0;
@@ -3464,7 +3464,7 @@ always @(i_clk or i_rst_n) begin
     end
 end
 
-always @(pram_chip_port_num or i_rst_n) begin
+always @(*) begin
     if (~i_rst_n) begin 
         pram_chip_apply_fail = 'd0;
         pram_chip_apply_success = 'd0;
@@ -3476,7 +3476,7 @@ always @(pram_chip_port_num or i_rst_n) begin
 end
 
 // 外部空间计算
-always @(i_clk or i_rst_n) begin 
+always @(*) begin 
     if (~i_rst_n) begin 
         outer_mem_enough_reg = 1'b0;
         compute_outer_done = 1'b0;
@@ -6197,9 +6197,10 @@ always @(posedge i_clk or negedge i_rst_n) begin : chip_apply_arbi
         arbi_res <= 12'd0;
         error_flag <= 1'b0;
         o_pram_chip_apply_req <= 'd0;
+        scheme_done <= 1'b0;
         // o_pram_chip_port_num <= 'd0;
-        pram_chip_apply_fail <= 'd0;
-        pram_chip_apply_success <= 'd0;
+        // pram_chip_apply_fail <= 'd0;
+        // pram_chip_apply_success <= 'd0;
     end
     else if (next_state == S_ABRI_ALONE) begin 
         arbi_res <= {inner_arbi_res, mem_apply_num_reg};
@@ -6275,7 +6276,7 @@ end
 // assign o_mem_vt_addr = i_mem_vt_addr;
 // assign o_data_vld = i_data_vld;
 
-always @(arbi_res or i_rst_n or i_clk) begin
+always @(*) begin
     if (!i_rst_n) begin 
         pram_apply_mem_done = 'd0;
         pram_apply_mem_refuse = 'd0;

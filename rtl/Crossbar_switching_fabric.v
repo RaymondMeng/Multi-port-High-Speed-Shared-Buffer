@@ -174,7 +174,7 @@ generate
     for (k = 0; k < 4; k = k + 1) begin: cross_col_fifo_dout_inst
         always @(*) begin
             if (~i_rst_n) begin
-                cross_col_fifo_dout[k] = cross_col_fifo_dout[k];
+                cross_col_fifo_dout[k] = 'd0;
             end
             else begin
                 cross_col_fifo_dout[k] = (cb_col_fifo_sel[k] == 'd0) ? cross_node_dout[k] :

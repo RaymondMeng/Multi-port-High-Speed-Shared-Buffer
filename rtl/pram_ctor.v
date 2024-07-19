@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-`include "./defines.v"
+`include "../new/defines.v"
 
 /*
 `define PRAM_NUM 32                              // PRAM数量
@@ -16,7 +16,7 @@
 */
 
 module pram_ctor #(
-    PRAM_NUMBER = 16
+    parameter PRAM_NUMBER = 16
 )(
     input  i_clk,
     input  i_rst_n,
@@ -82,7 +82,7 @@ reg div2_reg_rvs;
 reg mem_addr_vld_sig;
 
 // pram状态寄存器
-reg  [`PORT_NUM_WIDTH-1:0]                         belong_port_num;                    // pram所属端口号
+// reg  [`PORT_NUM_WIDTH-1:0]                         belong_port_num;                    // pram所属端口号
 reg  [`MEM_ADDR_WIDTH*2+`PRAM_DEPTH_WIDTH-1:0]     pram_free_list;                     // pram空闲空间链表（首地址、尾地址、大小）
 reg  [`PORT_NUM_WIDTH-1:0]                         malloc_port;                        // 内存分配目标端口
 reg  [`DATA_FRAME_NUM_WIDTH-1:0]                   malloc_num;                         // 分配数量
@@ -301,1408 +301,1408 @@ always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin 
         o_chip_apply_refuse <= 16'd0;
         o_chip_apply_success <= 16'd0;
-        belong_port_num <= 4'd0;
+        // belong_port_num <= 4'd0;
     end
     else if (c_state_apply == S_RST_APPLY) begin 
         if (PRAM_NUMBER < 16) begin 
-            belong_port_num <= PRAM_NUMBER;
+            // belong_port_num <= PRAM_NUMBER;
         end
         else begin 
-            belong_port_num <= 4'd0;
+            // belong_port_num <= 4'd0;
         end
     end
     else if (n_state_apply == S_CHIP_APPLY && ~pram_work) begin 
         case(PRAM_NUMBER) 
             'd16: begin 
                 if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
             end
             'd17: begin 
                 if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
             end
             'd18: begin 
                 if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
             end
             'd19: begin 
                 if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
             end
             'd20: begin 
                 if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
             end
             'd21: begin 
                 if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end 
             end
             'd22: begin 
                 if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
             end
             'd23: begin 
                 if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
             end
             'd24: begin 
                 if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
             end
             'd25: begin 
                 if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
             end
             'd26: begin 
                 if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
             end
             'd27: begin 
                 if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
             end
             'd28: begin 
                 if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
             end
             'd29: begin 
                 if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
             end
             'd30: begin 
                 if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
             end
             'd31: begin 
                 if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
                 else if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
             end
             default: begin 
                 if (i_chip_apply_sig[0]) begin 
-                    belong_port_num <= 4'd0;
+                    // belong_port_num <= 4'd0;
                     o_chip_apply_refuse <= 16'hfffe;
                     o_chip_apply_success <= 16'h0001;
                 end
                 else if (i_chip_apply_sig[1]) begin 
-                    belong_port_num <= 4'd1;
+                    // belong_port_num <= 4'd1;
                     o_chip_apply_refuse <= 16'hfffd;
                     o_chip_apply_success <= 16'h0002;
                 end
                 else if (i_chip_apply_sig[2]) begin 
-                    belong_port_num <= 4'd2;
+                    // belong_port_num <= 4'd2;
                     o_chip_apply_refuse <= 16'hfffb;
                     o_chip_apply_success <= 16'h0004;
                 end
                 else if (i_chip_apply_sig[3]) begin 
-                    belong_port_num <= 4'd3;
+                    // belong_port_num <= 4'd3;
                     o_chip_apply_refuse <= 16'hfff7;
                     o_chip_apply_success <= 16'h0008;
                 end
                 else if (i_chip_apply_sig[4]) begin 
-                    belong_port_num <= 4'd4;
+                    // belong_port_num <= 4'd4;
                     o_chip_apply_refuse <= 16'hffef;
                     o_chip_apply_success <= 16'h0010;
                 end
                 else if (i_chip_apply_sig[5]) begin 
-                    belong_port_num <= 4'd5;
+                    // belong_port_num <= 4'd5;
                     o_chip_apply_refuse <= 16'hffdf;
                     o_chip_apply_success <= 16'h0020;
                 end
                 else if (i_chip_apply_sig[6]) begin 
-                    belong_port_num <= 4'd6;
+                    // belong_port_num <= 4'd6;
                     o_chip_apply_refuse <= 16'hffbf;
                     o_chip_apply_success <= 16'h0040;
                 end
                 else if (i_chip_apply_sig[7]) begin 
-                    belong_port_num <= 4'd7;
+                    // belong_port_num <= 4'd7;
                     o_chip_apply_refuse <= 16'hff7f;
                     o_chip_apply_success <= 16'h0080;
                 end
                 else if (i_chip_apply_sig[8]) begin 
-                    belong_port_num <= 4'd8;
+                    // belong_port_num <= 4'd8;
                     o_chip_apply_refuse <= 16'hfeff;
                     o_chip_apply_success <= 16'h0100;
                 end
                 else if (i_chip_apply_sig[9]) begin 
-                    belong_port_num <= 4'd9;
+                    // belong_port_num <= 4'd9;
                     o_chip_apply_refuse <= 16'hfdff;
                     o_chip_apply_success <= 16'h0200;
                 end
                 else if (i_chip_apply_sig[10]) begin 
-                    belong_port_num <= 4'd10;
+                    // belong_port_num <= 4'd10;
                     o_chip_apply_refuse <= 16'hfbff;
                     o_chip_apply_success <= 16'h0400;
                 end
                 else if (i_chip_apply_sig[11]) begin 
-                    belong_port_num <= 4'd11;
+                    // belong_port_num <= 4'd11;
                     o_chip_apply_refuse <= 16'hf7ff;
                     o_chip_apply_success <= 16'h0800;
                 end
                 else if (i_chip_apply_sig[12]) begin 
-                    belong_port_num <= 4'd12;
+                    // belong_port_num <= 4'd12;
                     o_chip_apply_refuse <= 16'hefff;
                     o_chip_apply_success <= 16'h1000;
                 end
                 else if (i_chip_apply_sig[13]) begin 
-                    belong_port_num <= 4'd13;
+                    // belong_port_num <= 4'd13;
                     o_chip_apply_refuse <= 16'hdfff;
                     o_chip_apply_success <= 16'h2000;
                 end
                 else if (i_chip_apply_sig[14]) begin 
-                    belong_port_num <= 4'd14;
+                    // belong_port_num <= 4'd14;
                     o_chip_apply_refuse <= 16'hbfff;
                     o_chip_apply_success <= 16'h4000;
                 end
                 else if (i_chip_apply_sig[15]) begin 
-                    belong_port_num <= 4'd15;
+                    // belong_port_num <= 4'd15;
                     o_chip_apply_refuse <= 16'h7fff;
                     o_chip_apply_success <= 16'h8000;
                 end
@@ -1738,7 +1738,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
         rr <= PRAM_NUMBER;
         apply_arbi_done <= 1'b0;
         malloc_port <= 4'd0;
-        o_mem_apply_refuse <= 16'd0;
+        // o_mem_apply_refuse <= 16'd0;
     end
     else if (n_state_apply == S_ARBI_APPLY) begin 
         if (PRAM_NUMBER <= 15) begin 
@@ -2340,7 +2340,7 @@ end
 
 
 // malloc_num赋值
-always @(malloc_port or i_rst_n or i_clk) begin : prot_sel
+always @(*) begin : prot_sel
     integer i;
     if (~i_rst_n) begin 
         malloc_num = 8'd0;
@@ -2917,11 +2917,18 @@ always @(read_port or i_rst_n or i_read_data) begin : output_read_data_res
     end
 end
 
-reg read_done_reg;
+wire read_done_reg;
+reg read_done_reg1, read_done_reg2;
 
-always @(posedge i_clk or negedge i_clk) begin
-    read_done_reg <= read_done;
+always @(posedge i_clk ) begin
+    read_done_reg1 <= read_done;
 end
+
+always @(negedge i_clk ) begin
+    read_done_reg2 <= read_done;
+end
+
+assign read_done_reg = read_done_reg1 | read_done_reg2;
 
 always @(read_port or i_rst_n or read_done_reg) begin : output_read_done_res
     integer a;
