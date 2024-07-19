@@ -82,9 +82,10 @@ reg fifo_rd_en;
 // reg [`DATA_DWIDTH-1:0] pack_head;
 //reg [3:0] dest_port;
 //reg [10:0] length;
-reg [6:0] unit_cnt, cnt_temp;
-reg [`ADDR_WIDTH-1:0] first_unit_addr;
-reg [`DATA_DWIDTH-1:0] unit_pre_1_dat, unit_pre_2_dat, unit_pre_3_dat; //定义第n-1,n-2,n-3个数据
+reg [6:0] unit_cnt;
+// cnt_temp;
+// reg [`ADDR_WIDTH-1:0] first_unit_addr;
+// reg [`DATA_DWIDTH-1:0] unit_pre_1_dat, unit_pre_2_dat, unit_pre_3_dat; //定义第n-1,n-2,n-3个数据
 wire [6:0] unit_cnt_wire;
 
 assign unit_cnt_wire = (i_dat[17:7] >> 4) + (|(i_dat[17:7] % 16)) + 'd1; //直接作为值拼接也是可以的
@@ -134,8 +135,9 @@ assign o_sram_sel = port;
 
 //free pointer list defines
 reg [`ADDR_WIDTH-1:0] free_ptr_din;
-reg fp_wr_en, fp_rd_en, init_vld;
-reg [`ADDR_WIDTH-1:0] fp_pre_1_dat, fp_pre_2_dat, fp_pre_3_dat;
+reg fp_wr_en, fp_rd_en;
+// init_vld;
+// reg [`ADDR_WIDTH-1:0] fp_pre_1_dat, fp_pre_2_dat, fp_pre_3_dat;
 wire [`ADDR_WIDTH-1:0] free_ptr_dout;
 wire fp_list_full, fp_list_empty, fp_list_almost_empty;
 reg aply_req;
@@ -161,29 +163,29 @@ always @(posedge i_clk or negedge i_rst_n) begin
         fifo_rd_en <= 1'b0;
         // pack_head <= 'd0;
         //dest_port <= 'd0;
-        //length <= 'd0;
+        length <= 'd0;
         unit_cnt <= 'd0;
         state <= 'd0;
         cb_wr_en <= 1'b0;
         cb_din <= 'd0;
         //sel <= 'd0;
         fp_rd_en <= 1'b0;
-        cnt_temp <= 'd0;
-        first_unit_addr <= 'd0;
+        // cnt_temp <= 'd0;
+        // first_unit_addr <= 'd0;
         mmu_wr_addr <= 'd0;
         mmu_wr_dat <= 'd0; //数据写入用组合
         mmu_wr_req <= 1'b0;
-        unit_pre_1_dat <= 'd0;
-        unit_pre_2_dat <= 'd0;
-        fp_pre_1_dat <= 'd0;
-        fp_pre_2_dat <= 'd0;
+        // unit_pre_1_dat <= 'd0;
+        // unit_pre_2_dat <= 'd0;
+        // fp_pre_1_dat <= 'd0;
+        // fp_pre_2_dat <= 'd0;
         mmu_wr_en <= 1'b0;
-        aply_req <= 1'b0;
+        // aply_req <= 1'b0;
         mmu_wr_done <= 1'b0;
     end
     else begin 
         // pack_head <= pack_head;
-        first_unit_addr <= first_unit_addr;
+        // first_unit_addr <= first_unit_addr;
         mmu_wr_req <= 1'b0;
         mmu_wr_en <= 1'b0;
         mmu_wr_dat <= mmu_wr_dat;
@@ -193,7 +195,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
         // aply_req <= 1'b0;
         length <= length;
         unit_cnt <= unit_cnt;
-        cnt_temp <= cnt_temp;
+        // cnt_temp <= cnt_temp;
         cb_wr_en <= 1'b0;
         mmu_wr_done <= 1'b0;
         case (state)
@@ -417,7 +419,7 @@ end
 // assign comb_malloc_done = ~i_mmu_malloc_done & malloc_done_r;
 
 //申请填充freelist 三段式
-reg [2:0] aply_state, aply_state_n;
+reg [1:0] aply_state, aply_state_n;
 always @(posedge i_clk or negedge i_rst_n) begin
     if (~i_rst_n) begin
         aply_state <= 'd0;
@@ -434,6 +436,7 @@ always @(*) begin
     end
     else begin
         aply_req = 1'b0;
+        aply_state_n = aply_state_n;
         case (aply_state)
             'd0: begin
                 aply_state_n = (state == 'd5) ? 'd1 : 'd0;
@@ -445,6 +448,7 @@ always @(*) begin
             'd2: begin
                 if (i_mmu_malloc_done) begin
                     aply_state_n = 'd0;
+                    aply_req = 'd0;
                 end
                 else begin
                     aply_state_n = 'd2;
@@ -497,7 +501,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
         free_ptr_din <= 'd0;
         fp_wr_en <= 1'b0;
         cnt <= 'd0;
-        init_vld <= 1'b0;
+        // init_vld <= 1'b0;
     end
     else begin
         if (~fp_list_full && locked) begin
@@ -505,12 +509,12 @@ always @(posedge i_clk or negedge i_rst_n) begin
                 fp_wr_en <= 1'b1; //初始化完成后fp的写使能交给mmu
                 free_ptr_din <= {port, 4'b0000, cnt[6:0]}; //这里用cnt模拟地址输入，初始化完成后fp的写数据交给mmu
                 cnt <= cnt + 1'b1;
-                init_vld <= (cnt=='d128) ? 1'b1 : 1'b0;
+                // init_vld <= (cnt=='d128) ? 1'b1 : 1'b0;
             end
             else begin
                 cnt <= cnt;
                 free_ptr_din <= free_ptr_din;
-                init_vld <= init_vld;
+                // init_vld <= init_vld;
                 fp_wr_en <= 1'b0;
             end
         end
@@ -518,7 +522,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
             free_ptr_din <= free_ptr_din;
             fp_wr_en <= 1'b0;
             cnt <= 'd0;
-            init_vld <= 1'b0;
+            // init_vld <= 1'b0;
         end
     end
 end

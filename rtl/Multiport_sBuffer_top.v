@@ -1258,6 +1258,7 @@ generate
           port_rd_sop[p] <= 1'b0;
           port_rd_eop[p] <= 1'b0;
           //port_rd_vld[p] <= 1'b0;
+          opt_sig_state[p] <= opt_sig_state[p];
           pkg_unit_cnt_reg[p] <= pkg_unit_cnt_reg[p];
           case (opt_sig_state[p])
             'd0: begin
